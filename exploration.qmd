@@ -1,0 +1,1322 @@
+---
+title: "Exploring Pitching Data"
+author: "Brendan Karadenes"
+format: html
+---
+
+# Baseball R Attempts
+
+```{r}
+library(baseballr)
+library(tidyverse)
+```
+
+```{r}
+logan_webb <- playerid_lookup("Webb", "Logan")
+zac_gallen <- playerid_lookup("Gallen", "Zac")
+```
+
+```{r}
+webb_id <- 657277
+gallen_id <- 668678
+webb <- webb_id
+gallen <- gallen_id
+```
+
+```{r}
+start <- "2023-04-06"
+end <- "2023-04-10"
+```
+
+```{r}
+webb_2023 <- statcast_search(
+  pitcherid = webb_id,
+  start_date = start,
+  end_date = end)
+```
+
+```{r}
+gallen_2023 <- statcast_search(
+  pitcherid = gallen_id,
+  start_date = start,
+  end_date = end)
+```
+
+```{r}
+gallen_2023 <- gallen_2023 %>%
+  filter(pitcher == gallen_id)
+```
+
+```{r}
+webb_2023 <- webb_2023 %>%
+  filter(pitcher == webb_id)
+```
+
+# Reading in csvs
+
+```{r}
+webb <- read.csv("webb_2023.csv")
+gallen <- read.csv("gallen_2023.csv")
+```
+
+# Pitch Selection in different counts
+
+```{r}
+gallen <- gallen %>%
+  unite("count", balls, strikes, sep = "-")
+```
+
+
+```{r}
+gallen_df <- gallen %>%
+  group_by(count, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_df, aes(x = count, y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") + 
+  labs(title = "Pitch Type Usage by Count", 
+       x = "Count (Balls-Strikes)", 
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
+Here I am looking at the proportion of pitches Zac Gallen threw in each different count. The goal is to generalize this code to all qualified pitchers and find pitchers who are related based on pitch selection.
+
+# Score Differential
+
+```{r}
+gallen_diff <- gallen %>%
+  mutate(diff = home_score - away_score)
+```
+
+```{r}
+gallen_diff <- gallen_diff %>%
+  mutate(score_category = case_when(
+    diff > 0 ~ "Leading",
+    diff == 0 ~ "Tied",
+    diff < 0 ~ "Trailing"
+  ))
+```
+
+```{r}
+gallen_pitchdiff <- gallen_diff %>%
+  group_by(score_category, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_pitchdiff, aes(x = score_category, y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(title = "Pitch Selection by Score Differential", 
+       x = "Score Differential",
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
+Same Idea as before but with different score differentials.
+
+# Pitch Selection with Outs
+
+```{r}
+gallen_outs <- gallen %>%
+  group_by(outs_when_up, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_outs, aes(x = as.factor(outs_when_up), y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(title = "Pitch Selection by Number of Outs", 
+       x = "Number of Outs", 
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
+Same idea, but different number of outs.
+
+# Qualified Pitcher Clusterings
+
+```{r}
+library(tidyverse)
+qual_pitchers <- read.csv("qual_pitchers.csv")
+```
+
+```{r}
+qual_pitchers %>%
+  summarise(unique_count = n_distinct(pitcher))
+```
+
+```{r}
+filtered_pitchers <- qual_pitchers %>%
+filter(player_name %in% c(
+  "Webb, Logan",
+  "Gallen, Zac",
+  "Cole, Gerrit",
+  "Mikolas, Miles",
+  "Bassitt, Chris",
+  "Valdez, Framber",
+  "Castillo, Luis",
+  "Keller, Mitch",
+  "López, Pablo",
+  "Burnes, Corbin",
+  "Nola, Aaron",
+  "Gibson, Kyle",
+  "Wheeler, Zack",
+  "Gilbert, Logan",
+  "Kirby, George",
+  "Berríos, José",
+  "Montgomery, Jordan",
+  "Strider, Spencer",
+  "Gausman, Kevin",
+  "Alcantara, Sandy",
+  "Giolito, Lucas",
+  "Gray, Sonny",
+  "Lynn, Lance",
+  "Corbin, Patrick",
+  "Snell, Blake",
+  "Luzardo, Jesús",
+  "Eflin, Zach",
+  "Kelly, Merrill",
+  "Lyles, Jordan",
+  "Oviedo, Johan",
+  "Cease, Dylan",
+  "Elder, Bryce",
+  "Steele, Justin",
+  "Dunning, Dane",
+  "Kremer, Dean",
+  "Walker, Taijuan",
+  "Sears, JP",
+  "Bradish, Kyle",
+  "Kikuchi, Yusei",
+  "Peralta, Freddy",
+  "Morton, Charlie",
+  "Verlander, Justin",
+  "Javier, Cristian"
+))
+
+```
+
+```{r}
+filtered_pitchers <- filtered_pitchers %>%
+  unite(count, balls, strikes, sep = "-")
+```
+
+```{r}
+grouped_pitches <- filtered_pitchers %>%
+  group_by(player_name, pitch_type, count) %>%
+  summarise(pitch_count = n(), .groups = 'drop') %>%
+  group_by(player_name, count) %>%
+  mutate(total_pitches_in_count = sum(pitch_count),
+         pitch_proportion = pitch_count / total_pitches_in_count) %>%
+  ungroup()
+```
+
+```{r}
+pitch_comparison <- grouped_pitches %>%
+  rename(player_1 = player_name, pitch_proportion_1 = pitch_proportion) %>%
+  inner_join(grouped_pitches %>%
+               rename(player_2 = player_name, pitch_proportion_2 = pitch_proportion),
+             by = c("count", "pitch_type")) %>%
+  filter(player_1 != player_2)
+```
+
+
+```{r}
+distribution_wide <- grouped_pitches %>%
+  pivot_wider(names_from = pitch_type, values_from = pitch_proportion, values_fill = 0)
+
+pitcher_similarity <- distribution_wide %>%
+  select(-player_name, -count) %>%
+  cor()
+```
+
+```{r}
+grouped_pitches
+```
+
+```{r}
+grouped_pitches_wide <- grouped_pitches %>%
+  pivot_wider(names_from = pitch_type, values_from = pitch_proportion, values_fill = 0)
+```
+
+```{r}
+grouped_pitches_by_outs <- filtered_pitchers %>%
+  group_by(player_name, pitch_type, outs_when_up) %>%
+  summarise(pitch_count = n(), .groups = 'drop') %>%
+  group_by(player_name, outs_when_up) %>%
+  mutate(total_pitches_in_outs = sum(pitch_count),
+         pitch_proportion = pitch_count / total_pitches_in_outs) %>%
+  ungroup()
+
+grouped_pitches_by_outs
+
+```
+
+```{r}
+pitchers_grouped <- grouped_pitches_by_outs %>%
+  pivot_wider(names_from = pitch_type, values_from = pitch_proportion, values_fill = 0)
+
+```
+
+Clustering pitchers based on pitch type.
+
+# Hierarchal clustering and heat maps
+
+```{r}
+aggregated_pitchers_by_outs <- pitchers_grouped %>%
+  group_by(player_name, outs_when_up) %>%
+  summarise(across(starts_with("CH"):starts_with("KC"), 
+                   ~ sum(. * total_pitches_in_outs) / sum(total_pitches_in_outs), 
+                   .names = "weighted_{col}")) %>%
+  ungroup()
+
+aggregated_pitchers_by_outs
+```
+
+```{r}
+pitching_data_for_clustering <- aggregated_pitchers_by_outs %>%
+  select(-player_name, -outs_when_up)  
+
+distance_matrix <- dist(pitching_data_for_clustering, method = "euclidean")  
+
+
+hc_pitchers <- hclust(distance_matrix, method = "ward.D2") 
+
+plot(hc_pitchers, labels = paste(aggregated_pitchers_by_outs$player_name, 
+                                 aggregated_pitchers_by_outs$outs_when_up, sep = "_"))
+```
+
+```{r}
+library(pheatmap)
+
+heatmap_data <- aggregated_pitchers_by_outs %>%
+  select(starts_with("weighted_"))  
+
+row_names <- paste(aggregated_pitchers_by_outs$player_name, 
+                   aggregated_pitchers_by_outs$outs_when_up, sep = "_")
+rownames(heatmap_data) <- row_names
+
+pheatmap(heatmap_data, 
+         cluster_rows = TRUE,   
+         cluster_cols = TRUE,   
+         scale = "row",          
+         main = "Pitch Type Proportions Heatmap",
+         display_numbers = TRUE)  
+
+```
+
+
+The goal here is to visualize the clusterings based on pitch type in order to see which pitchers are related to each other. Above is the hierarchial cluster and the heatmap.
+
+```{r}
+clusters <- cutree(hc_pitchers, k = 4)  
+
+aggregated_pitchers_by_outs <- aggregated_pitchers_by_outs %>%
+  mutate(cluster = clusters)
+
+head(aggregated_pitchers_by_outs)
+```
+
+```{r}
+cluster_summary <- aggregated_pitchers_by_outs %>%
+  group_by(cluster) %>%
+  summarise(across(starts_with("weighted_"), mean)) 
+```
+
+```{r}
+pitchers_in_cluster_1 <- aggregated_pitchers_by_outs %>%
+  filter(cluster == 1)
+
+```
+
+```{r}
+library(ggplot2)
+
+ggplot(aggregated_pitchers_by_outs, aes(x = factor(cluster), y = weighted_FF)) +
+  geom_boxplot() +
+  labs(title = "Fastball (FF) Usage by Cluster", x = "Cluster", y = "Proportion of FF") +
+  theme_minimal()
+```
+
+Beginning to look at different clusters pitch usage. Maybe compare each cluster to overall stats/optimal pitch selection.
+
+# Histograms looking at skew of each pitch
+
+```{r}
+# changeups
+ggplot(data = aggregated_pitchers_by_outs, mapping = aes(x = weighted_CH)) +
+  geom_histogram() +
+  labs(title = "Histogram of Changeups")
+```
+
+```{r}
+# curveball
+ggplot(data = aggregated_pitchers_by_outs, mapping = aes(x = weighted_CU)) +
+  geom_histogram() +
+  labs(title = "Histogram of Curveballs")
+```
+
+```{r}
+# cutter
+ggplot(data = aggregated_pitchers_by_outs, mapping = aes(x = weighted_FC)) +
+  geom_histogram() +
+  labs(title = "Histogram of Cutters")
+```
+
+```{r}
+# fastballs
+ggplot(data = aggregated_pitchers_by_outs, mapping = aes(x = weighted_FF)) +
+  geom_histogram() +
+  labs(title = "Histogram of Fastballs")
+```
+
+# Ranks 
+
+```{r}
+ranked_pitchers_by_outs <- aggregated_pitchers_by_outs %>%
+  group_by(player_name, outs_when_up) %>%
+  mutate(
+    rank_FF = rank(weighted_FF, ties.method = "average"),
+    rank_CH = rank(weighted_CH, ties.method = "average"),
+    rank_SL = rank(weighted_SL, ties.method = "average"),
+    rank_SI = rank(weighted_SI, ties.method = "average"),
+    rank_CU = rank(weighted_CU, ties.method = "average"),
+    rank_FC = rank(weighted_FC, ties.method = "average"),
+    rank_FS = rank(weighted_FS, ties.method = "average"),
+    rank_ST = rank(weighted_ST, ties.method = "average"),
+    rank_KC = rank(weighted_KC, ties.method = "average"),
+    rank_SV = rank(weighted_SV, ties.method = "average")
+  ) %>%
+  ungroup()
+```
+
+```{r}
+ranked_pitching_data_for_clustering <- ranked_pitchers_by_outs %>%
+  select(starts_with("rank_"))
+
+distance_matrix <- dist(ranked_pitching_data_for_clustering, method = "euclidean")  
+hc_pitchers_ranked <- hclust(distance_matrix, method = "ward.D2") 
+
+plot(hc_pitchers_ranked, labels = paste(ranked_pitchers_by_outs$player_name, 
+                                        ranked_pitchers_by_outs$outs_when_up, sep = "_"))
+
+```
+
+```{r}
+grouped_pitches_no_outs <- filtered_pitchers %>%
+  group_by(player_name, pitch_type) %>%
+  summarise(pitch_count = n(), .groups = 'drop') %>%
+  group_by(player_name) %>%
+  mutate(total_pitches = sum(pitch_count),
+         pitch_proportion = pitch_count / total_pitches) %>%
+  ungroup()
+```
+
+```{r}
+ranked_pitchers_no_outs <- grouped_pitches_no_outs %>%
+  pivot_wider(names_from = pitch_type, values_from = pitch_proportion, values_fill = 0) %>%
+  mutate(
+    rank_FF = rank(FF, ties.method = "average"),
+    rank_SL = rank(SL, ties.method = "average"),
+    rank_SI = rank(SI, ties.method = "average"),
+    rank_CH = rank(CH, ties.method = "average"),
+    rank_CU = rank(CU, ties.method = "average"),
+    rank_FC = rank(FC, ties.method = "average"),
+    rank_FS = rank(FS, ties.method = "average"),
+    rank_ST = rank(ST, ties.method = "average"),
+    rank_SV = rank(SV, ties.method = "average"),
+    rank_KC = rank(KC, ties.method = "average")
+  ) %>%
+  ungroup()
+```
+
+```{r}
+# Clustering on ranked data
+ranked_pitching_data_for_clustering_no_outs <- ranked_pitchers_no_outs %>%
+  select(starts_with("rank_"))
+
+distance_matrix_no_outs <- dist(ranked_pitching_data_for_clustering_no_outs, method = "euclidean")  
+hc_pitchers_no_outs <- hclust(distance_matrix_no_outs, method = "ward.D2") 
+
+```
+
+```{r}
+heatmap_data_no_outs <- ranked_pitchers_no_outs %>%
+  select(starts_with("rank_"))
+
+row_names_no_outs <- ranked_pitchers_no_outs$player_name
+rownames(heatmap_data_no_outs) <- row_names_no_outs
+
+
+```
+
+```{r}
+row_names_no_outs <- paste(ranked_pitchers_no_outs$player_name, ranked_pitchers_no_outs$pitch_count, sep = "_")
+
+rownames(heatmap_data_no_outs) <- row_names_no_outs
+```
+
+```{r}
+ggplot(ranked_pitchers_no_outs, aes(x = factor(cluster), y = rank_FF)) +
+  geom_boxplot() +
+  labs(title = "Fastball (FF) Ranks by Cluster (Ignoring Outs)", 
+       x = "Cluster", y = "Rank of Fastball (FF)") +
+  theme_minimal()
+```
+
+```{r}
+ranked_pitching_data_for_clustering_no_outs <- ranked_pitchers_no_outs %>%
+  select(starts_with("rank_"))
+
+distance_matrix_no_outs <- dist(ranked_pitching_data_for_clustering_no_outs, method = "euclidean")
+
+hc_pitchers_no_outs <- hclust(distance_matrix_no_outs, method = "ward.D2")
+
+plot(hc_pitchers_no_outs, labels = ranked_pitchers_no_outs$player_name)
+
+```
+
+```{r}
+clusters_no_outs <- cutree(hc_pitchers_no_outs, k = 4)  
+```
+
+```{r}
+ranked_pitchers_no_outs <- ranked_pitchers_no_outs %>%
+  mutate(cluster = clusters_no_outs)
+```
+
+```{r}
+head(ranked_pitchers_no_outs)
+```
+
+```{r}
+# only cluster 3 seems to have interpretable range
+ggplot(ranked_pitchers_no_outs, aes(x = factor(cluster), y = rank_FF)) +
+  geom_boxplot() +
+  labs(title = "Fastball (FF) Ranks by Cluster (Ignoring Outs)", 
+       x = "Cluster", y = "Rank of Fastball (FF)") +
+  theme_minimal()
+```
+
+```{r}
+# Cluster 1 with interpretable range
+ggplot(ranked_pitchers_no_outs, aes(x = factor(cluster), y = rank_CH)) +
+  geom_boxplot() +
+  labs(title = "Changeup Ranks by Cluster (Ignoring Outs)", 
+       x = "Cluster", y = "Rank of Changeup (CH)") +
+  theme_minimal()
+```
+
+```{r}
+# cluster 3 interpretable range
+ggplot(ranked_pitchers_no_outs, aes(x = factor(cluster), y = rank_FF)) +
+  geom_boxplot() +
+  labs(title = "Curveball (CU) Ranks by Cluster (Ignoring Outs)", 
+       x = "Cluster", y = "Rank of Curveball (CU)") +
+  theme_minimal()
+```
+
+Since the pitching data is skewed I'm using ranks from dplyr instead of a heatmap. Trying to visualize by cluster, but having difficulty getting a meaningful visual. I think it's like this because pitchers in other clusters don't have certain pitches. Need to filter data to account for that.
+
+# Cutting the tree
+
+```{r}
+clusters_at_height <- cutree(hc_pitchers, h = 0.2)
+```
+
+```{r}
+aggregated_pitchers_by_outs <- aggregated_pitchers_by_outs %>%
+  mutate(cluster = clusters_at_height)
+```
+
+```{r}
+plot(hc_pitchers, labels = paste(aggregated_pitchers_by_outs$player_name, 
+                                 aggregated_pitchers_by_outs$outs_when_up, sep = "_"))
+rect.hclust(hc_pitchers, h = 0.2) 
+```
+
+```{r}
+clusters <- cutree(hc_pitchers, k = 5)  
+
+aggregated_pitchers_by_outs$cluster <- clusters
+
+```
+
+```{r}
+pitch_selection_by_count <- aggregated_pitchers_by_outs %>%
+  group_by(cluster, outs_when_up) %>%
+  summarise(across(starts_with("weighted_"), mean, na.rm = TRUE))
+```
+
+```{r}
+ggplot(aggregated_pitchers_by_outs, aes(x = outs_when_up, y = weighted_FF, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Fastball (FF) Selection by Cluster and Outs",
+       x = "Outs", y = "Average Rank of Fastball (FF)") +
+  theme_minimal()
+```
+
+# Dividing each pitch type into groups, 10/31
+
+```{r}
+unique(grouped_pitches$pitch_type)
+```
+
+
+```{r}
+type_pitches <- filtered_pitchers %>%
+  filter(!(pitch_type %in% c("CS", "PO"))) %>%
+  mutate(pitch_group = case_when(
+    pitch_type %in% c("FF", "SI", "FC") ~ "Fastball",
+    pitch_type %in% c("CH", "FS", "KN") ~ "Offspeed",
+    pitch_type %in% c("CU", "SL", "ST", "KC", "SV") ~ "Breaking_Ball" 
+  ))
+```
+
+```{r}
+divided_pitches <- type_pitches %>%
+  group_by(player_name, pitch_group) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  group_by(player_name) %>%
+  mutate(proportion = count / sum(count)) %>%
+  select(-count) %>%
+  pivot_wider(names_from = pitch_group, values_from = proportion, values_fill = 0)
+```
+
+# Clustering based on pitch groupings (Not accounting for any situation)
+
+```{r}
+cluster_pitches <- divided_pitches %>%
+  select(Breaking_Ball, Fastball, Offspeed)
+```
+
+```{r}
+dist_matrix <- dist(cluster_pitches, method = "euclidean")
+```
+
+```{r}
+hc <- hclust(dist_matrix, method = "ward.D2")
+```
+
+```{r}
+plot(hc, labels = cluster_pitches$player_name, main = "Heirarchal Clustering Based on Pitch Group")
+```
+
+```{r}
+clusters <- cutree(hc, k = 5)
+cluster_pitches.eight <- cluster_pitches %>%
+  ungroup() %>%
+  mutate(cluster = clusters)
+```
+
+# Pitch Selection within each group
+
+```{r}
+pitch_selection <- cluster_pitches.eight %>%
+  group_by(cluster) %>%
+  summarize(
+    avg_breaking_ball = mean(Breaking_Ball, na.rm = TRUE),
+    avg_fastball = mean(Fastball, na.rm = TRUE),
+    avg_offspeed = mean(Offspeed, na.rm = TRUE),
+    count = n()
+  )
+```
+
+```{r}
+pitch_selection_plot <- pitch_selection %>%
+  pivot_longer(cols = starts_with("avg"), names_to = "pitch_type", values_to = "proportion")
+```
+
+```{r}
+ggplot(data = pitch_selection_plot, mapping = aes(x = factor(cluster), y = proportion, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Cluster", y = "Average Proportion", fill = "Pitch Type", title = "Pitch Selection Between Clusters") +
+  theme_minimal()
+```
+
+# Heatmap with Ranks for Outs
+
+```{r}
+type_pitches_outs <- filtered_pitchers %>%
+  filter(!(pitch_type %in% c("CS", "PO"))) %>%
+  mutate(pitch_group = case_when(
+    pitch_type %in% c("FF", "SI", "FC") ~ "Fastball",
+    pitch_type %in% c("CH", "FS", "KN") ~ "Offspeed",
+    pitch_type %in% c("CU", "SL", "ST", "KC", "SV") ~ "Breaking_Ball" 
+  ))
+```
+
+```{r}
+type_pitches_outs_sum <- type_pitches_outs %>%
+  group_by(player_name, outs_when_up, pitch_group) %>%
+  summarize(count = n(), .groups = "drop") %>%
+  group_by(player_name, outs_when_up) %>%
+  mutate(proportion = count/sum(count)) %>%
+  select(-count) %>%
+  pivot_wider(names_from = pitch_group, values_from = proportion, values_fill = 0)
+```
+
+```{r}
+ranks_outs <- type_pitches_outs_sum %>%
+  mutate(last_name = str_extract(player_name, "^[^,]+")) %>%
+  group_by(outs_when_up) %>%
+  mutate(
+    rank_breaking_ball = rank(-Breaking_Ball),
+    rank_fastball = rank(-Fastball),
+    rank_offspeed = rank(-Offspeed)
+  ) %>%
+  ungroup() %>%
+  select(player_name, outs_when_up, rank_breaking_ball, rank_fastball, rank_offspeed, last_name)
+```
+
+```{r}
+ranks_outs_long <- ranks_outs %>%
+  pivot_longer(cols = starts_with("rank"), names_to = "pitch_group", values_to = "rank") %>%
+  mutate(pitch_group = gsub("rank_", "" ,pitch_group))
+```
+
+```{r}
+ggplot(data = ranks_outs_long, mapping = aes(x = outs_when_up, y = last_name, fill = rank)) +
+  geom_tile() +
+  facet_wrap(~ pitch_group, ncol = 1) +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(
+    x = "Outs",
+    y = "Pitcher",
+    fill = "Rank",
+    title = "Heatmap of Pitch Group Ranks with Outs"
+  ) +
+  theme_minimal()
+```
+
+# 11/6 Finding how pitchers change in different situations
+
+```{r}
+specific_counts <- type_pitches %>%
+  #filter(count %in% c("0-2", "1-2")) %>%
+  group_by(player_name, pitch_group, count) %>%
+  summarize(count_specific = n(), .groups = "drop") %>%
+  group_by(player_name, count) %>%
+  mutate(proportion_specific = count_specific - sum(count_specific)) %>%
+  select(player_name, pitch_group, count, proportion_specific)
+```
+
+```{r}
+general_selection <- divided_pitches %>%
+  pivot_longer(cols = c(Fastball, Breaking_Ball, Offspeed),
+               names_to = "pitch_group", values_to = "proportion_general") 
+  
+```
+
+```{r}
+comparison <- specific_counts %>%
+  left_join(general_selection, by = c("player_name", "pitch_group")) %>%
+  mutate(proportion_difference = proportion_specific - proportion_general)
+```
+
+```{r}
+comparison_cluster <- comparison %>%
+  left_join(cluster_pitches.eight %>% select(player_name, cluster), by = "player_name") %>%
+  group_by(cluster, count, pitch_group) %>%
+  summarize(avg_proportion_difference = mean(proportion_difference, na.rm = TRUE), .groups = "drop")
+```
+
+```{r}
+ggplot(data = comparison_cluster, aes(x = factor(cluster), y = avg_proportion_difference, fill = pitch_group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ count, ncol = 1) +
+  labs(x = "Cluster", y = "Average Change in Proportion", fill = "Pitch Type",
+       title = "Change in Pitch Selection in 0-2 and 1-2 Counts by Cluster") + 
+  theme_minimal()
+```
+
+# 11/7 Changes in Pitch Selection Using Z-Scores
+
+```{r}
+pitch_change_stats <- comparison %>%
+  group_by(count, pitch_group) %>%
+  summarize(
+    mean_change = mean(proportion_difference, na.rm = TRUE),
+    sd_change = sd(proportion_difference, na.rm= TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+comparison_zscores <- comparison %>%
+  left_join(pitch_change_stats, by = c("count", "pitch_group")) %>%
+  mutate(z_score = (proportion_difference - mean_change) / sd_change)
+```
+
+```{r}
+cluster_zscores <- comparison_zscores %>%
+  left_join(cluster_pitches.eight %>% select(player_name, cluster), by = "player_name") %>%
+  group_by(cluster, count, pitch_group) %>%
+  summarize(avg_z_score = mean(z_score, na.rm = TRUE), .groups = "drop")
+```
+
+```{r}
+ggplot(cluster_zscores, aes(x = factor(cluster), y = avg_z_score, fill = pitch_group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ count, ncol = 1) +
+  labs(x = "Cluster", y = "Average Z-Score", fill = "Pitch Type",
+       title = "Standardized Changes in Pitch Selection by Cluster") +
+  theme_minimal()
+```
+
+# 11/7 Comparing Within Each Cluster
+
+```{r}
+comparison_zscores_clusters <- comparison_zscores %>%
+  left_join(cluster_pitches.eight %>% select(player_name, cluster), by = "player_name")
+```
+
+```{r}
+ggplot(comparison_zscores_clusters, aes(x = factor(cluster), y = z_score, fill = pitch_group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.6) +
+  geom_jitter(width = 0.2, alpha = 0.5, color = "black", size = 1.2) +
+  facet_wrap(~ count + pitch_group, ncol = 3) +
+  labs(
+    x = "Cluster",
+    y = "Z-Score",
+    fill = "Pitch Type",
+    title = "Variability in Pitch Selection within Clusters"
+  ) +
+  theme_minimal()
+```
+
+# 11/14: Reformatting Data for Proportions
+
+```{r}
+count_prop <- type_pitches %>%
+#  filter(count %in% c("0-2", "1-2")) %>%
+  group_by(player_name, count) %>%
+  mutate(total_pitches = n()) %>%
+  group_by(player_name, pitch_group, count) %>%
+  summarise(proportion = n() / unique(total_pitches), .groups = 'drop')
+```
+
+```{r}
+# adding cluster column
+comparison <- comparison %>%
+  left_join(cluster_pitches.eight %>% select(player_name, cluster), by = "player_name")
+```
+
+```{r}
+count_diff <- count_prop %>%
+  inner_join(comparison, by = c("player_name", "count", "pitch_group")) %>%
+  mutate(difference = proportion_general - proportion)
+```
+
+```{r}
+count_diff <- count_diff %>%
+  select(-proportion_specific, -proportion_difference)
+```
+
+```{r}
+avg_diff <- count_diff %>%
+  group_by(player_name, count, cluster) %>%
+  summarise(
+    change_fastball = mean(difference[pitch_group == "Fastball"], na.rm = TRUE) %>% replace_na(0),
+    change_breaking_ball = mean(difference[pitch_group == "Breaking_Ball"], na.rm = TRUE) %>% replace_na(0),
+    change_offspeed = mean(difference[pitch_group == "Offspeed"], na.rm = TRUE) %>% replace_na(0)
+  ) %>%
+  ungroup()
+
+```
+
+
+# 11/14: Shiny App
+
+```{r}
+library(plotly)
+library(shiny)
+```
+
+```{r}
+cluster_1_data <- avg_diff %>%
+  filter(cluster == 1)
+
+plot <- plot_ly(
+  data = cluster_1_data,
+  x = ~change_fastball,
+  y = ~change_breaking_ball,
+  z = ~change_offspeed,
+  type = "scatter3d",
+  mode = "markers",
+  text = ~player_name,  
+  marker = list(size = 5)
+) %>%
+  layout(
+    title = "Pitch Type Changes for Cluster 1",
+    scene = list(
+      xaxis = list(title = "Change in Fastball"),
+      yaxis = list(title = "Change in Breaking Ball"),
+      zaxis = list(title = "Change in Offspeed")
+    )
+  )
+
+plot
+```
+
+```{r}
+ui <- fluidPage(
+  titlePanel("3D Pitch Type Change by Pitcher"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("count", "Select Count", choices = unique(avg_diff$count)),
+      selectInput("cluster", "Select Cluster", choices = unique(avg_diff$cluster))
+    ),
+    mainPanel(
+      plotlyOutput("pitch3DPlot")
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output) {
+  filtered_data <- reactive({
+    avg_diff %>%
+      filter(count == input$count, cluster == input$cluster)
+  })
+  
+  output$pitch3DPlot <- renderPlotly({
+    plot_ly(
+      data = filtered_data(),
+      x = ~change_fastball,
+      y = ~change_breaking_ball,
+      z = ~change_offspeed,
+      type = "scatter3d",
+      mode = "markers",
+      text = ~player_name,
+      marker = list(size = 5)
+    ) %>%
+      layout(
+        scene = list(
+          xaxis = list(title = "Change in Fastball"),
+          yaxis = list(title = "Change in Breaking Ball"),
+          zaxis = list(title = "Change in Offspeed")
+        ),
+        title = "3D Plot of Pitch Type Changes by Pitcher"
+      )
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+Principle Component Analysis:
+
+- Find new axes that explain the most variation in the data
+- There will be 3 principle components from the 3D plane, we will keep the first
+- two when transfering to the 2D axes
+- Goal is to represent multivariate data table as a smaller set of variables.
+- Takes the important variables and drops the less important ones
+next week: modeling
+
+# 11/21 Modeling Stats and Pitch Selection
+
+```{r}
+pitching23 <- read_csv("pitching23.csv")
+```
+
+```{r}
+era_pitchers <- pitching23 %>%
+  separate(Player, into = c("Firstname", "Lastname"), sep = " ", extra = "merge") %>%
+  mutate(Player = paste(Lastname, Firstname, sep = ", "),
+         ERA = ERA...3) %>%
+  select(Player, ERA)
+```
+
+```{r}
+# Perform the join
+avg_diff <- avg_diff %>%
+  left_join(era_pitchers, by = c("player_name" = "Player"))
+```
+
+```{r}
+# Calculate SSE and absolute sum of changes for each pitcher
+error_df <- avg_diff %>%
+  group_by(player_name, count) %>%
+  summarize(
+    SSE = sum((change_fastball)^2 + (change_breaking_ball)^2 + (change_offspeed)^2),
+    rSSE = sqrt(SSE),
+    abs_sum = sum(abs(change_fastball) + abs(change_breaking_ball) + abs(change_offspeed)),
+    ERA = first(ERA)  # Keep ERA the same for all counts of a player
+  ) %>%
+  ungroup()
+```
+
+```{r}
+model <- lm(ERA ~ abs_sum * count + SSE, data = error_df)
+
+summary(model)
+```
+
+```{r}
+ggplot(error_df, aes(x = ERA, y = SSE, color = as.factor(count))) +
+  geom_point() +
+  geom_smooth(method = "lm", aes(group = count), se = FALSE) +
+  labs(
+    title = "Effect of ERA and Count on SSE",
+    x = "ERA",
+    y = "SSE",
+    color = "Count"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+ggplot(error_df, aes(x = ERA, y = abs_sum)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Relationship Between Absolute Sum of Changes and ERA",
+    x = "ERA",
+    y = "Absolute Sum of Changes"
+  ) +
+  theme_minimal()
+
+```
+
+# Strikeouts
+
+```{r}
+so_pitchers <- pitching23 %>%
+  separate(Player, into = c("Firstname", "Lastname"), sep = " ", extra = "merge") %>%
+  mutate(Player = paste(Lastname, Firstname, sep = ", "),
+         ERA = ERA...3) %>%
+  select(Player, SO)
+```
+
+```{r}
+# Perform the join
+avg_diff_so <- avg_diff %>%
+  left_join(so_pitchers, by = c("player_name" = "Player"))
+```
+
+```{r}
+# Calculate SSE and absolute sum of changes for each pitcher
+error_df_so <- avg_diff_so %>%
+  group_by(player_name, count) %>%
+  summarize(
+    SSE = sqrt(sum((change_fastball)^2 + (change_breaking_ball)^2 + (change_offspeed)^2)),
+    abs_sum = sum(abs(change_fastball) + abs(change_breaking_ball) + abs(change_offspeed)),
+    SO = first(SO)  # Keep ERA the same for all counts of a player
+  ) %>%
+  ungroup()
+```
+
+```{r}
+model_so <- lm(SO ~ abs_sum * count + SSE, data = error_df)
+
+summary(model)
+```
+
+```{r}
+ggplot(error_df, aes(x = SO, y = SSE, color = as.factor(count))) +
+  geom_point() +
+  geom_smooth(method = "lm", aes(group = count), se = FALSE) +
+  labs(
+    title = "Effect of SO and Count on SSE",
+    x = "SO",
+    y = "SSE",
+    color = "Count"
+  ) +
+  theme_minimal()
+# build model w indicators as clusters, count, pitcher dev as response, emmeans
+
+```
+
+```{r}
+ggplot(error_df, aes(x = SO, y = abs_sum)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Relationship Between Absolute Sum of Changes and SO",
+    x = "SO",
+    y = "Absolute Sum of Changes"
+  ) +
+  theme_minimal()
+
+```
+
+Looking to find ways to see how pitch selection might effect performance. Tried ERA and strikeouts without finding any strong correlations. 
+
+# 12/4: Models
+
+```{r}
+error_df_so_adj <- error_df_so %>%
+  mutate(
+    # Split 'count' into balls and strikes
+    balls = as.numeric(sub("-.*", "", count)),
+    strikes = as.numeric(sub(".*-", "", count)),
+    # Calculate adjusted_count
+    adjusted_count = strikes - balls
+  )
+```
+
+```{r}
+pitching23_cut <- pitching23 %>%
+  mutate(Player = sub("^(\\S+)\\s+(.*)$", "\\2, \\1", Player)) %>%
+  select(Player, FIP, WHIP, `SO/BB`, BF, IP) # Select only the desired columns
+```
+
+```{r}
+stat_df <- error_df_so_adj %>%
+  left_join(pitching23_cut, by = c("player_name" = "Player"))
+```
+
+
+```{r}
+# Insignificant Variables, very low R^2
+model_fip <- lm(FIP ~ SSE + abs_sum + adjusted_count, data = stat_df)
+summary(model_fip)
+```
+
+```{r}
+# Again, poor model
+model_change <- lm(FIP ~ SSE + abs_sum, data = stat_df)
+summary(model_change)
+```
+
+```{r}
+# Poor model but better than previous 2
+model_so <- lm(SO ~ SSE + abs_sum, data = stat_df)
+summary(model_so)
+```
+
+```{r}
+model_tot <- lm(SO ~ adjusted_count + SSE + abs_sum + WHIP + `SO/BB` + BF + IP, data = stat_df)
+summary(model_tot)
+```
+
+```{r}
+mod_int <- lm(WHIP ~ adjusted_count*SSE + abs_sum + `SO/BB` + BF + IP, data = stat_df)
+summary(mod_int)
+AIC(mod_int)
+BIC(mod_int)
+```
+
+```{r}
+mod_int2 <- lm(SSE ~ adjusted_count*abs_sum + FIP + `SO/BB` + BF + IP, data = stat_df)
+summary(mod_int2)
+AIC(mod_int2)
+BIC(mod_int2)
+```
+
+
+```{r}
+# resid vs fitted
+ggplot(data = data.frame(fitted = mod_int2$fitted.values, resid = residuals(mod_int2)),
+       aes(x = fitted, y = resid)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# normal q-q
+ggplot(data = data.frame(resid = residuals(mod_int2)),
+       aes(sample = resid)) +
+  stat_qq(color = "blue", alpha = 0.6) +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Normal Q-Q Plot",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# resid vs fitted
+ggplot(data = data.frame(fitted = mod_int$fitted.values, resid = residuals(mod_int)),
+       aes(x = fitted, y = resid)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# normal q-q
+ggplot(data = data.frame(resid = residuals(mod_int)),
+       aes(sample = resid)) +
+  stat_qq(color = "blue", alpha = 0.6) +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Normal Q-Q Plot",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+library(car)
+vif(mod_int2)
+```
+
+```{r}
+mod_int3 <- lm(log(SSE) ~ as.factor(adjusted_count) + FIP + `SO/BB` + IP, data = stat_df)
+summary(mod_int3)
+```
+
+```{r}
+vif(mod_int3)
+AIC(mod_int3)
+BIC(mod_int3)
+```
+
+```{r}
+# resid vs fitted
+ggplot(data = data.frame(fitted = mod_int3$fitted.values, resid = residuals(mod_int3)),
+       aes(x = fitted, y = resid)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# normal q-q
+ggplot(data = data.frame(resid = residuals(mod_int3)),
+       aes(sample = resid)) +
+  stat_qq(color = "blue", alpha = 0.6) +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Normal Q-Q Plot",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+```
+
+# 12/12: Interaction Terms/Emmeans
+
+```{r}
+library(emmeans)
+library(multcomp)
+```
+
+```{r}
+mod_int4 <- lm(log(SSE) ~ as.factor(adjusted_count)*FIP + `SO/BB` + IP, data = stat_df)
+anova(mod_int4)
+```
+
+```{r}
+mod_int5 <- lm(log(SSE) ~ as.factor(adjusted_count)*`SO/BB` + FIP + IP, data = stat_df)
+anova(mod_int5)
+```
+
+```{r}
+mod_int6 <- lm(log(SSE) ~ as.factor(adjusted_count)*IP + FIP + `SO/BB`, data = stat_df)
+anova(mod_int6)
+```
+
+```{r}
+obj <- emmeans(mod_int4,specs = as.factor("adjusted_count"))
+```
+
+```{r}
+emmeans(mod_int4,specs = c("adjusted_count", "FIP"))
+```
+
+```{r}
+emmeans_obj <- emmeans(mod_int4, specs = c("adjusted_count", "FIP"))
+plot(pairs(obj)) + geom_vline(xintercept = 0)
+cld(obj)
+```
+
+```{r}
+joint_tests(mod_int4)
+```
+
+```{r}
+pairs(emmeans_obj)
+```
+
+```{r}
+# resid vs fitted
+ggplot(data = data.frame(fitted = mod_int4$fitted.values, resid = residuals(mod_int4)),
+       aes(x = fitted, y = resid)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# normal q-q
+ggplot(data = data.frame(resid = residuals(mod_int4)),
+       aes(sample = resid)) +
+  stat_qq(color = "blue", alpha = 0.6) +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Normal Q-Q Plot",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+# resid vs fitted
+ggplot(data = data.frame(fitted = mod_int5$fitted.values, resid = residuals(mod_int5)),
+       aes(x = fitted, y = resid)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(
+    title = "Residuals vs Fitted",
+    x = "Fitted Values",
+    y = "Residuals"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+# normal q-q
+ggplot(data = data.frame(resid = residuals(mod_int5)),
+       aes(sample = resid)) +
+  stat_qq(color = "blue", alpha = 0.6) +
+  stat_qq_line(color = "red", linetype = "dashed") +
+  labs(
+    title = "Normal Q-Q Plot",
+    x = "Theoretical Quantiles",
+    y = "Sample Quantiles"
+  ) +
+  theme_minimal()
+
+```
+

@@ -1,0 +1,287 @@
+---
+title: "Final Summary"
+author: "Brendan Karadenes"
+format: html
+---
+
+# Introduction
+
+The purpose of this project was to examine how Major League Baseball (MLB) pitchers react to different in-game scenarios. To find an answer to this question we looked at each pitcher's pitch arsenals and tendencies. To maintain consistency, we used only qualifying pitchers (1 inning pitched per team game) from the 2023 season. All of the data was retrieved from MLB's Statcast database where we were able to see each pitcher's pitch from the season.In addition, the result of each pitch and other advanced metrics were available to view. To begin the investigation we separated each pitcher into 5 different clusters based on their pitching arsenal. We looked at pitch selection for each group and were able to visualize how each type of pitcher reacted to different situations, like different outs and counts. We compared pitchers both within and between different clusters, making a small shiny app to visualize this. Then, we built various models for each pitcher to see if certain statistics, like Earned Run Average (ERA) could predict how much the pitcher deviated from their primary pitch.
+
+# Step 1: Pitcher Clustering
+
+To begin the project, we gathered each qualified pitcher and their 2023 season statistics into a single dataset. The list of pitchers can be viewed below:
+
+```{r}
+library(gt)
+players <- data.frame(
+  Player = c("Webb, Logan",
+  "Gallen, Zac",
+  "Cole, Gerrit",
+  "Mikolas, Miles",
+  "Bassitt, Chris",
+  "Valdez, Framber",
+  "Castillo, Luis",
+  "Keller, Mitch",
+  "López, Pablo",
+  "Burnes, Corbin",
+  "Nola, Aaron",
+  "Gibson, Kyle",
+  "Wheeler, Zack",
+  "Gilbert, Logan",
+  "Kirby, George",
+  "Berríos, José",
+  "Montgomery, Jordan",
+  "Strider, Spencer",
+  "Gausman, Kevin",
+  "Alcantara, Sandy",
+  "Giolito, Lucas",
+  "Gray, Sonny",
+  "Lynn, Lance",
+  "Corbin, Patrick",
+  "Snell, Blake",
+  "Luzardo, Jesús",
+  "Eflin, Zach",
+  "Kelly, Merrill",
+  "Lyles, Jordan",
+  "Oviedo, Johan",
+  "Cease, Dylan",
+  "Elder, Bryce",
+  "Steele, Justin",
+  "Dunning, Dane",
+  "Kremer, Dean",
+  "Walker, Taijuan",
+  "Sears, JP",
+  "Bradish, Kyle",
+  "Kikuchi, Yusei",
+  "Peralta, Freddy",
+  "Morton, Charlie",
+  "Verlander, Justin",
+  "Javier, Cristian")
+)
+players_table <- players %>%
+  gt() %>%
+  tab_header(title = "Qualified Pitchers")
+players_table
+```
+
+To prepare for the clustering we gathered the proportion of each pitch type for each pitcher. This way, we can compare pitch selection between them. 
+
+```{r}
+grouped_pitches <- filtered_pitchers %>%
+  group_by(player_name, pitch_type, count) %>%
+  summarise(pitch_count = n(), .groups = 'drop') %>%
+  group_by(player_name, count) %>%
+  mutate(total_pitches_in_count = sum(pitch_count),
+         pitch_proportion = pitch_count / total_pitches_in_count) %>%
+  ungroup()
+```
+
+In addition, within each cluster, we looked at how pitchers used each pitch within each count. This was an important step because we were able to see any changes (or lack thereof) in different situations. The code above groups the data by pitcher, pitch, and count and calculates the number of pitches thrown for each combination of the three variables. Using the `pitch_proportion` variable, we are able to see the proportion of that pitch relative to all pitches thrown in that count.
+
+```{r}
+grouped_pitches_by_outs <- filtered_pitchers %>%
+  group_by(player_name, pitch_type, outs_when_up) %>%
+  summarise(pitch_count = n(), .groups = 'drop') %>%
+  group_by(player_name, outs_when_up) %>%
+  mutate(total_pitches_in_outs = sum(pitch_count),
+         pitch_proportion = pitch_count / total_pitches_in_outs) %>%
+  ungroup()
+
+grouped_pitches_by_outs
+```
+
+The code above is similar to the chunk working with different counts. Instead, we are grouping player name and pitch type with the number of outs and calculating the proportion of pitches thrown in each outs situation (0-2). 
+
+To visualize these results we looked at various different visuals including hierarchal clustering trees and heat maps. This proved to be difficult because with the amount of different pitchers the output was messy and difficult to see the results. One of the solutions to this problem was cutting the tree which cut down the number of clusters and made larger groups of similar pitchers. Viewing pitch usage by cluster provided a baseline on how we viewed each cluster and their pitch selection. However, it needed to be adjusted based on league averages for each different pitch. For example, four seam fastballs tend to be used more on average than others by starting pitchers, so we gave each different pitch a weight based on these averages in order to evenly compare them and provide more accurate clusterings. To achieve this we used ranks on each pitch to make comparisons.
+
+```{r}
+library(tidyverse)
+ranked_pitchers_by_outs <- aggregated_pitchers_by_outs %>%
+  group_by(player_name, outs_when_up) %>%
+  mutate(
+    rank_FF = rank(weighted_FF, ties.method = "average"),
+    rank_CH = rank(weighted_CH, ties.method = "average"),
+    rank_SL = rank(weighted_SL, ties.method = "average"),
+    rank_SI = rank(weighted_SI, ties.method = "average"),
+    rank_CU = rank(weighted_CU, ties.method = "average"),
+    rank_FC = rank(weighted_FC, ties.method = "average"),
+    rank_FS = rank(weighted_FS, ties.method = "average"),
+    rank_ST = rank(weighted_ST, ties.method = "average"),
+    rank_KC = rank(weighted_KC, ties.method = "average"),
+    rank_SV = rank(weighted_SV, ties.method = "average")
+  ) %>%
+  ungroup()
+```
+
+In the dataset above, each pitcher has a rank for each pitch.
+
+Based off of the ranked pitches we were able to make more accurate clusters with the pitch selections weighted for general pitch usage. We did this in two ways: one ignoring the number of outs and just recording pitch selection in general and another by looking at pitch selection based on the number of outs for each cluster. 
+
+```{r}
+ggplot(aggregated_pitchers_by_outs, aes(x = outs_when_up, y = weighted_FF, fill = factor(cluster))) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Fastball (FF) Selection by Cluster and Outs",
+       x = "Outs", y = "Average Rank of Fastball (FF)") +
+  theme_minimal()
+```
+
+In the graph above you can see the pitch selection remained fairly consistent with each number of outs. Cluster 3 threw more fastballs when there was 0 outs compared to 1 or 2 outs. Also, cluster 5 threw significantly more fastballs with 1 out than when they had 0 or 2 outs.
+
+This was a step in the right direction, however an issue came up when trying to visualize the data. Since each pitcher doesn't have every single pitch seen above in their arsenal, I needed to filter the data into three broader categories: fastballs, which included fourseams, sinkers, and cutters, offspeed pitches, which included changeups, knuckleballs, and splitters, and finally breaking balls, which included curveballs, sliders, knuckle curveballs, sweepers, and slurves. The code for this is shown below:
+
+```{r}
+type_pitches <- filtered_pitchers %>%
+  filter(!(pitch_type %in% c("CS", "PO"))) %>%
+  mutate(pitch_group = case_when(
+    pitch_type %in% c("FF", "SI", "FC") ~ "Fastball",
+    pitch_type %in% c("CH", "FS", "KN") ~ "Offspeed",
+    pitch_type %in% c("CU", "SL", "ST", "KC", "SV") ~ "Breaking_Ball" 
+  ))
+```
+
+With these new pitch groupings we once again clustered pitchers based on their arsenals with the 3 broad pitch types. Similarly, we cut the hierarchal clustering tree into 5 groups and viewed the pitch selection in each one by calculating the average proportion of pitches in each of the three groups. 
+
+```{r}
+pitch_selection <- cluster_pitches.eight %>%
+  group_by(cluster) %>%
+  summarize(
+    avg_breaking_ball = mean(Breaking_Ball, na.rm = TRUE),
+    avg_fastball = mean(Fastball, na.rm = TRUE),
+    avg_offspeed = mean(Offspeed, na.rm = TRUE),
+    count = n()
+  )
+```
+
+To visualize these results we looked at plots and heatmaps to see differences between the different clusters.
+
+```{r}
+ggplot(data = ranks_outs_long, mapping = aes(x = outs_when_up, y = last_name, fill = rank)) +
+  geom_tile() +
+  facet_wrap(~ pitch_group, ncol = 1) +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(
+    x = "Outs",
+    y = "Pitcher",
+    fill = "Rank",
+    title = "Heatmap of Pitch Group Ranks with Outs"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+ggplot(data = pitch_selection_plot, mapping = aes(x = factor(cluster), y = proportion, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Cluster", y = "Average Proportion", fill = "Pitch Type", title = "Pitch Selection Between Clusters") +
+  theme_minimal()
+```
+
+# Step 2: Situational Changes
+
+After clustering the pitchers we moved on to see how they reacted in different ball-strike counts. Specifically, we were interested in how their pitch selection varied in different ball-strike counts. 
+
+```{r}
+specific_counts <- type_pitches %>%
+  #filter(count %in% c("0-2", "1-2")) %>%
+  group_by(player_name, pitch_group, count) %>%
+  summarize(count_specific = n(), .groups = "drop") %>%
+  group_by(player_name, count) %>%
+  mutate(proportion_specific = count_specific - sum(count_specific)) %>%
+  select(player_name, pitch_group, count, proportion_specific)
+```
+
+To find this, we looked at the average change in proportion when the pitcher was ahead in the count (0-2 and 1-2) for each cluster. The purpose of this was to see which pitch was their go-to in a strikeout count and if it differed at all from their usual arsenal.
+
+```{r}
+ggplot(data = comparison_cluster, aes(x = factor(cluster), y = avg_proportion_difference, fill = pitch_group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ count, ncol = 1) +
+  labs(x = "Cluster", y = "Average Change in Proportion", fill = "Pitch Type",
+       title = "Change in Pitch Selection in 0-2 and 1-2 Counts by Cluster") + 
+  theme_minimal()
+```
+
+After visualizing the proportions, we chose to standardize them using z-scores, which allowed us to make more effective comparisons. We then compared the standardized changes in pitch usages both within and between the different clusters.
+
+Following this and reformatting the data, we made a small shiny app to visualize the results. The shiny app allows you to visualize the different pitch selection for each cluster under different counts. This includes seeing how the pitchers changed their fastball, breaking ball, and offspeed pitch selection. In addition, it includes a 3D plot to visualize the different changes. Since there are three different pitch groupings, a 3D visual was neccesary to view the data and took us one step closer to look into modeling.
+
+```{r}
+ui <- fluidPage(
+  titlePanel("3D Pitch Type Change by Pitcher"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("count", "Select Count", choices = unique(avg_diff$count)),
+      selectInput("cluster", "Select Cluster", choices = unique(avg_diff$cluster))
+    ),
+    mainPanel(
+      plotlyOutput("pitch3DPlot")
+    )
+  )
+)
+
+# Define server logic
+server <- function(input, output) {
+  filtered_data <- reactive({
+    avg_diff %>%
+      filter(count == input$count, cluster == input$cluster)
+  })
+  
+  output$pitch3DPlot <- renderPlotly({
+    plot_ly(
+      data = filtered_data(),
+      x = ~change_fastball,
+      y = ~change_breaking_ball,
+      z = ~change_offspeed,
+      type = "scatter3d",
+      mode = "markers",
+      text = ~player_name,
+      marker = list(size = 5)
+    ) %>%
+      layout(
+        scene = list(
+          xaxis = list(title = "Change in Fastball"),
+          yaxis = list(title = "Change in Breaking Ball"),
+          zaxis = list(title = "Change in Offspeed")
+        ),
+        title = "3D Plot of Pitch Type Changes by Pitcher"
+      )
+  })
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+# Step 3: Modeling
+
+The next step in the process was to test out some models to see if we could predict the amount a pitcher varies from their average selection in different situations. Also, we included statistical measures as explanatory variables to see if their is a difference in variation between more and less successful pitchers. To calculate the variation we used the sum of the changes in the squared pitch groups (fastballs, breaking balls, and offspeed) and the absolute sum of the changes by taking the absolute value of each change for each type of pitch. The code for which can be found below:
+
+```{r}
+# Calculate SSE and absolute sum of changes for each pitcher
+error_df <- avg_diff %>%
+  group_by(player_name, count) %>%
+  summarize(
+    SSE = sum((change_fastball)^2 + (change_breaking_ball)^2 + (change_offspeed)^2),
+    rSSE = sqrt(SSE),
+    abs_sum = sum(abs(change_fastball) + abs(change_breaking_ball) + abs(change_offspeed)),
+    ERA = first(ERA)  # Keep ERA the same for all counts of a player
+  ) %>%
+  ungroup()
+```
+
+For the actual modeling we used statistics like ERA, different counts, strikeouts, WHIP, FIP, strikeout-to-walk ratio, innings pitched, and batters faced to predict SSE and the absolute sum of changes. We attempted various model types including linear and log models to find the best fit or at least look for significant explanatory variables. 
+
+```{r}
+mod_int3 <- lm(log(SSE) ~ as.factor(adjusted_count) + FIP + `SO/BB` + IP, data = stat_df)
+summary(mod_int3)
+```
+
+In this original model we see the adjusted count of -1, 0, 1, and 2 all being significant, suggesting that in those situations where the pitcher is either even, down 1 ball, up 1 strike, or up 2 strikes, pitchers are deviating from their usual arsenal. However, statistical performance measures such as FIP, strikeout-to-walk ratio, and innings pitched don't seem to have a significant effect.
+
+# Conclusion
+
+
+
+
+
+
+

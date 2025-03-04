@@ -1,0 +1,147 @@
+---
+title: "Exploring Pitching Data"
+author: "Brendan Karadenes"
+format: html
+---
+
+
+# Baseball R Attempts
+
+
+```{r}
+library(baseballr)
+library(tidyverse)
+```
+
+```{r}
+logan_webb <- playerid_lookup("Webb", "Logan")
+zac_gallen <- playerid_lookup("Gallen", "Zac")
+```
+
+```{r}
+webb_id <- 657277
+gallen_id <- 668678
+webb <- webb_id
+gallen <- gallen_id
+```
+
+```{r}
+start <- "2023-04-06"
+end <- "2023-04-10"
+```
+
+```{r}
+webb_2023 <- statcast_search(
+  pitcherid = webb_id,
+  start_date = start,
+  end_date = end)
+```
+
+```{r}
+gallen_2023 <- statcast_search(
+  pitcherid = gallen_id,
+  start_date = start,
+  end_date = end)
+```
+
+```{r}
+gallen_2023 <- gallen_2023 %>%
+  filter(pitcher == gallen_id)
+```
+
+```{r}
+webb_2023 <- webb_2023 %>%
+  filter(pitcher == webb_id)
+```
+
+
+# Reading in csvs
+
+
+```{r}
+webb <- read.csv("webb_2023.csv")
+gallen <- read.csv("gallen_2023.csv")
+```
+
+
+# Pitch Selection in different counts
+
+
+```{r}
+gallen <- gallen %>%
+  unite("count", balls, strikes, sep = "-")
+```
+
+```{r}
+gallen_df <- gallen %>%
+  group_by(count, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_df, aes(x = count, y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") + 
+  labs(title = "Pitch Type Usage by Count", 
+       x = "Count (Balls-Strikes)", 
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
+
+# Score Differential
+
+
+```{r}
+gallen_diff <- gallen %>%
+  mutate(diff = home_score - away_score)
+```
+
+```{r}
+gallen_diff <- gallen_diff %>%
+  mutate(score_category = case_when(
+    diff > 0 ~ "Leading",
+    diff == 0 ~ "Tied",
+    diff < 0 ~ "Trailing"
+  ))
+```
+
+```{r}
+gallen_pitchdiff <- gallen_diff %>%
+  group_by(score_category, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_pitchdiff, aes(x = score_category, y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(title = "Pitch Selection by Score Differential", 
+       x = "Score Differential",
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
+
+# Pitch Selection with Outs
+
+
+```{r}
+gallen_outs <- gallen %>%
+  group_by(outs_when_up, pitch_type) %>%
+  summarise(pitch_count = n()) %>%
+  ungroup()
+```
+
+```{r}
+ggplot(gallen_outs, aes(x = as.factor(outs_when_up), y = pitch_count, fill = pitch_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  labs(title = "Pitch Selection by Number of Outs", 
+       x = "Number of Outs", 
+       y = "Pitch Type Proportion") +
+  scale_y_continuous() +
+  theme_minimal()
+```
+
