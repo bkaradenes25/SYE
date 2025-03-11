@@ -263,7 +263,6 @@ grouped_pitches_by_outs
 ```{r}
 pitchers_grouped <- grouped_pitches_by_outs %>%
   pivot_wider(names_from = pitch_type, values_from = pitch_proportion, values_fill = 0)
-
 ```
 
 Clustering pitchers based on pitch type.
@@ -286,8 +285,6 @@ pitching_data_for_clustering <- aggregated_pitchers_by_outs %>%
   select(-player_name, -outs_when_up)  
 
 distance_matrix <- dist(pitching_data_for_clustering, method = "euclidean")  
-
-
 hc_pitchers <- hclust(distance_matrix, method = "ward.D2") 
 
 plot(hc_pitchers, labels = paste(aggregated_pitchers_by_outs$player_name, 
