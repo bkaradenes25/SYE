@@ -2,8 +2,6 @@
 title: "R versus Python Side-by-Side"
 author: "Brendan Karadenes"
 format: html
-execute: 
-  eval: false
 editor: 
   markdown: 
     wrap: 72
@@ -156,10 +154,17 @@ filter(player_name %in% c(
 
 # Python Version
 
+```{r}
+install.packages("reticulate")
+library(reticulate)
+```
+
 ```{python}
 import pandas as pd
 from plotnine import *
-
+from scipy.spatial.distance import pdist
+from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import fcluster
 players = pd.DataFrame({
     "Player": [
         "Webb, Logan", "Gallen, Zac", "Cole, Gerrit", "Mikolas, Miles",
@@ -286,42 +291,65 @@ aggregated_pitchers_by_outs
 # Python Version
 
 ```{python}
+# Count pitches by player, pitch type, and outs
 grouped_pitches_by_outs = (
-    filtered_pitchers.groupby(['player_name', 'pitch_type', 'outs_when_up'])
+    filtered_pitchers
+    .groupby(['player_name', 'pitch_type', 'outs_when_up'])
     .size()
     .reset_index(name='pitch_count')
 )
+
+# Add total pitches for each player and outs situation
 grouped_pitches_by_outs['total_pitches_in_outs'] = (
-    grouped_pitches_by_outs.groupby(['player_name', 'outs_when_up'])['pitch_count'].transform('sum')
+    grouped_pitches_by_outs
+    .groupby(['player_name', 'outs_when_up'])['pitch_count']
+    .transform('sum')
 )
+
+# Calculate proportion of each pitch type
 grouped_pitches_by_outs['pitch_proportion'] = (
-    grouped_pitches_by_outs['pitch_count'] / grouped_pitches_by_outs['total_pitches_in_outs']
+    grouped_pitches_by_outs['pitch_count'] /
+    grouped_pitches_by_outs['total_pitches_in_outs']
 )
 
-```
+# Pivot so each pitch type is a column (like pivot_wider in R)
+pitchers_grouped = grouped_pitches_by_outs.pivot_table(
+    index=['player_name', 'outs_when_up'],
+    columns='pitch_type',
+    values='pitch_proportion',
+    fill_value=0
+).reset_index()
 
-```{python}
+# Merge total_pitches_in_outs back in
+pitch_counts = (
+    grouped_pitches_by_outs[['player_name', 'outs_when_up', 'total_pitches_in_outs']]
+    .drop_duplicates()
+)
+pitchers_grouped = pd.merge(pitchers_grouped, pitch_counts, on=['player_name', 'outs_when_up'])
+
+# Apply weighted average function
 pitch_cols = ['CH', 'CU', 'FC', 'FF', 'FS', 'FT', 'KC', 'SI', 'SL']
-# Weighted average function
+
 def weighted_avg(group):
-  weights = group['total_pitches_in_outs']
-  return pd.Series({
-      f'weighted_{col}': (group[col] * weights).sum() / weights.sum()
-      for col in pitch_cols
-  })
-  
+    weights = group['total_pitches_in_outs']
+    return pd.Series({
+        f'weighted_{col}': (group[col] * weights).sum() / weights.sum()
+        for col in pitch_cols if col in group.columns
+    })
+
 aggregated_pitchers_by_outs = (
-  pitchers_grouped
-  .groupby(['player_name', 'outs_when_up'])
-  .apply(weighted_avg)
-  .reset_index()
+    pitchers_grouped
+    .groupby(['player_name', 'outs_when_up'])
+    .apply(weighted_avg)
+    .reset_index()
 )
+
 ```
 
-## Hierarchal Clustering
+## Hierarchical Clustering
 
 To visualize these results we looked at various different visuals
-including hierarchal clustering trees and heat maps. This proved to be
+including hierarchical clustering trees and heat maps. This proved to be
 difficult because with the amount of different pitchers the output was
 messy and difficult to see the results. One of the solutions to this
 problem was cutting the tree which cut down the number of clusters and
@@ -447,7 +475,7 @@ type_pitches <- filtered_pitchers %>%
 
 With these new pitch groupings we once again clustered pitchers based on
 their arsenals with the 3 broad pitch types. Similarly, we cut the
-hierarchal clustering tree into 5 groups and viewed the pitch selection
+hierarchical clustering tree into 5 groups and viewed the pitch selection
 in each one by calculating the average proportion of pitches in each of
 the three groups.
 
@@ -539,8 +567,80 @@ ranks_outs_long <- ranks_outs %>%
 # Python Version
 
 ```{python}
+import re
+import numpy as np
+type_pitches_outs["pitch_group"] = np.select(
+    [
+        type_pitches_outs["pitch_type"].isin(["FF", "SI", "FC"]),
+        type_pitches_outs["pitch_type"].isin(["CH", "FS", "KN"]),
+        type_pitches_outs["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
+    ],
+    ["Fastball", "Offspeed", "Breaking_Ball"],
+    default=None  # or use dtype='object' if assigning to an array
+)
+
+```
+
+```{python}
+type_pitches_outs_sum = (
+    type_pitches_outs
+    .dropna(subset=["pitch_group"])  # remove rows with undefined pitch_group
+    .groupby(["player_name", "outs_when_up", "pitch_group"])
+    .size()
+    .reset_index(name="count")
+)
+
+type_pitches_outs_sum = (
+    type_pitches_outs_sum
+    .groupby(["player_name", "outs_when_up"])
+    .apply(lambda df: df.assign(proportion = df["count"] / df["count"].sum()))
+    .reset_index(drop=True)
+    .drop(columns="count")
+    .pivot(index=["player_name", "outs_when_up"], columns="pitch_group", values="proportion")
+    .fillna(0)
+    .reset_index()
+)
+```
+
+```{python}
+# Extract last name from "Lastname, Firstname"
+type_pitches_outs_sum["last_name"] = type_pitches_outs_sum["player_name"].str.extract(r"^([^,]+)")
+
+ranks_outs = (
+    type_pitches_outs_sum
+    .copy()
+    .groupby("outs_when_up")
+    .apply(lambda df: df.assign(
+        rank_breaking_ball = df["Breaking_Ball"].rank(ascending=False, method='min'),
+        rank_fastball = df["Fastball"].rank(ascending=False, method='min'),
+        rank_offspeed = df["Offspeed"].rank(ascending=False, method='min')
+    ))
+    .reset_index(drop=True)
+)
+
+ranks_outs = ranks_outs[[
+    "player_name", "outs_when_up", "rank_breaking_ball", "rank_fastball", "rank_offspeed", "last_name"
+]]
+```
+
+```{python}
+ranks_outs_long = (
+    ranks_outs
+    .melt(
+        id_vars=["player_name", "outs_when_up", "last_name"],
+        value_vars=["rank_breaking_ball", "rank_fastball", "rank_offspeed"],
+        var_name="pitch_group",
+        value_name="rank"
+    )
+)
+
+ranks_outs_long["pitch_group"] = ranks_outs_long["pitch_group"].str.replace("rank_", "")
+
+```
+
+```{python}
 # Prepare data for clustering
-pitching_data_for clustering = aggregated_pitchers_by_outs.drop(columns = ["player_name", "outs_when_up"])
+pitching_data_for_clustering = aggregated_pitchers_by_outs.drop(columns = ["player_name", "outs_when_up"])
 distance_matrix = pdist(pitching_data_for_clustering, metric = 'euclidean')
 hc_pitchers = linkage(distance_matrix, method = 'ward')
 ```
@@ -549,6 +649,54 @@ hc_pitchers = linkage(distance_matrix, method = 'ward')
 # Cut tree into clusters
 clusters = fcluster(hc_pitchers, 4, criterion = 'maxclust')
 aggregated_pitchers_by_outs["cluster"] = clusters
+```
+
+```{python}
+# Remove non-pitch events
+type_pitches = (
+    filtered_pitchers[~filtered_pitchers["pitch_type"].isin(["CS", "PO"])]
+    .copy()
+)
+
+# Assign pitch group
+type_pitches["pitch_group"] = np.select(
+    [
+        type_pitches["pitch_type"].isin(["FF", "SI", "FC"]),
+        type_pitches["pitch_type"].isin(["CH", "FS", "KN"]),
+        type_pitches["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
+    ],
+    ["Fastball", "Offspeed", "Breaking_Ball"],
+    default="Unknown"  # Fix: using a string to match other outputs
+)
+
+# Proportion of each pitch group by pitcher
+divided_pitches = (
+    type_pitches[type_pitches["pitch_group"] != "Unknown"]
+    .groupby(["player_name", "pitch_group"])
+    .size()
+    .reset_index(name="count")
+    .groupby("player_name")
+    .apply(lambda df: df.assign(proportion=df["count"] / df["count"].sum()))
+    .reset_index(drop=True)
+    .drop(columns="count")
+    .pivot(index="player_name", columns="pitch_group", values="proportion")
+    .fillna(0)
+    .reset_index()
+)
+
+# Extract just the pitch proportions for clustering
+cluster_pitches = divided_pitches[["Breaking_Ball", "Fastball", "Offspeed"]]
+
+# Hierarchical clustering
+distance_matrix = pdist(cluster_pitches, metric="euclidean")
+hc = linkage(distance_matrix, method="ward")
+
+# Cut tree into 5 clusters
+clusters = fcluster(hc, 5, criterion="maxclust")
+
+# Add cluster assignments back to full dataset
+cluster_pitches_eight = divided_pitches.copy()
+cluster_pitches_eight["cluster"] = clusters
 ```
 
 To visualize these results we looked at plots and heatmaps to see
@@ -598,65 +746,63 @@ ggplot(data = pitch_selection_plot, mapping = aes(x = factor(cluster), y = propo
 # Python Version
 
 ```{python}
-# Visualization of Fastball Selection By Cluster
-pitch_selection_melted = pitch_selection.melt(
-  id_vars = ["cluster"],
-  var_name = "pitch_type",
-  value_name = "proportion"
-)
-
-pitch_selection_plot(
-  ggplot(pitch_selection_melted, aes(x = "factor(cluster)", y = "proportion", fill = "pitch_type")) + geom_bar(stat = "identity", position = "dodge") +
-  labs(
-    title = "Pitch Selection Between Clusters",
-    x = "Cluster",
-    y = "Average Proportion",
-    fill = "Pitch Type"
-) +
-theme_minimal()
+# Group by cluster and compute average pitch proportions
+pitch_selection = (
+    cluster_pitches_eight
+    .groupby("cluster")
+    .agg(
+        avg_breaking_ball=('Breaking_Ball', 'mean'),
+        avg_fastball=('Fastball', 'mean'),
+        avg_offspeed=('Offspeed', 'mean'),
+        count=('cluster', 'count')
+    )
+    .reset_index()
 )
 
 ```
 
 ```{python}
-# Heatmap of Pitch Groups
-ranks_outs["last_name"] = ranks_outs["player_name"].str.extract(r"r^([^,]+)")
+# Fix last_name extraction
+ranks_outs["last_name"] = ranks_outs["player_name"].str.extract(r"^([^,]+)")
 
+# Reshape data to long format
 ranks_outs_long = ranks_outs.melt(
-  id_vars = ["player_name", "outs_when_up", "last_name"],
-  value_vars = ["rank_breaking_ball", "rank_fastball", "rank_offspeed"],
-  var_name = "pitch_group",
-  value_name = "rank
+    id_vars=["player_name", "outs_when_up", "last_name"],
+    value_vars=["rank_breaking_ball", "rank_fastball", "rank_offspeed"],
+    var_name="pitch_group",
+    value_name="rank"
 )
 
+# Clean pitch_group column
 ranks_outs_long["pitch_group"] = ranks_outs_long["pitch_group"].str.replace("rank_", "")
 
+# Plot heatmap
 heatmap_plot = (
-  ggplot(ranks_outs_long, aes(x = "outs_when_up", y = "last_name", fill = "rank")) + geom_tile() + 
-  facet_wrap("~pitch_group", ncol = 1) + 
-  scale_fill_gradient(low = "white", high = "red") +
-  labs(
-    title = "Heatmap of Pitch Group Ranks with Outs",
-    x = "Outs",
-    y = "Pitcher",
-    fill = "Rank"
-) +
-theme_minimal()
+    ggplot(ranks_outs_long, aes(x="outs_when_up", y="last_name", fill="rank")) +
+    geom_tile() +
+    facet_wrap("~pitch_group", ncol=1) +
+    scale_fill_gradient(low="white", high="red") +
+    labs(
+        title="Heatmap of Pitch Group Ranks with Outs",
+        x="Outs",
+        y="Pitcher",
+        fill="Rank"
+    ) +
+    theme_minimal()
 )
 ```
 
 ```{python}
-# Grouping
-pitch_selection(
-  cluster_pitches_eight
-  .groupby("cluster")
-  .agg(
-    avg_breaking_ball = ('Breaking_Ball', 'mean'),
-    avg_fastball = ("Fastball', 'mean'),
-    avg_offspeed = ('Offspeed', 'mean'),
-    count = ('cluster', 'count')
-  )
-  .reset_index()
+pitch_selection = (
+    cluster_pitches_eight
+    .groupby("cluster")
+    .agg(
+        avg_breaking_ball=('Breaking_Ball', 'mean'),
+        avg_fastball=('Fastball', 'mean'),
+        avg_offspeed=('Offspeed', 'mean'),
+        count=('cluster', 'count')
+    )
+    .reset_index()
 )
 ```
 
@@ -669,7 +815,6 @@ pitch_selection_plot = (
 ```
 
 ```{python}
-# Plot
 (
   ggplot(pitch_selection_plot, aes(x = 'factor(cluster)', y = 'proportion', fill = 'pitch_type')) +
   geom_bar(stat = 'identity', position = 'dodge') +
@@ -744,13 +889,14 @@ ggplot(data = comparison_cluster, aes(x = factor(cluster), y = avg_proportion_di
 # Python Version
 
 ```{python}
-specific_counts(
-  type_pitches
-  .groupby(['player_name', 'pitch_group', 'count'])
-  .size().reset_index(name = 'count_specific')
-  .group_by(['player_name', 'count'])
-  .apply(lambda x: x.assign(proportion_specific = x['count_specific'] / x['count_specific'].sum()))
-  .reset_index(drop = True)
+specific_counts = (
+    type_pitches
+    .groupby(['player_name', 'pitch_group', 'count'])
+    .size()
+    .reset_index(name='count_specific')
+    .groupby(['player_name', 'count'])
+    .apply(lambda x: x.assign(proportion_specific = x['count_specific'] / x['count_specific'].sum()))
+    .reset_index(drop=True)
 )
 ```
 
@@ -845,33 +991,46 @@ avg_diff <- count_diff %>%
 # Python Version
 
 ```{python}
-# Z-Scores
-count_prop = (
-  type_pitches
-  .groupby(['player_name', 'count'])
-  .apply(lambda df: df.assign(total_pitches = len(df)))
-  .reset_index(drop = True)
-  .groupby(['player_name', 'pitch_group', 'count'])
-  .apply(lambda df: pd.Series({'proportion: len(df) / df['total_pitches'].iloc[0]}))
-  .reset_index()
+count_diff = (
+    count_prop
+    .merge(comparison, on=["player_name", "count", "pitch_group"], how="inner")
+    .assign(difference = lambda df: df["proportion_general"] - df["proportion"])
 )
-# Add cluster column to comparison
-comparison = comparison.merge(cluster_pitches_eight[['player_name', 'cluster']], on = 'player_name', how = 'left')
+count_diff = count_diff.drop(columns=["proportion_specific", "proportion_difference"], errors="ignore")
 ```
 
 ```{python}
-count_diff = count_diff.drop(columns = ['proportion_specific', 'proportion_difference'])
-
-avg_diff = (
-  count_diff
-  .groupby(['player_name', 'count', 'cluster'])
-  .apply(lambda df: pd.Series({
-      'change_fastball': df.loc[df['pitch_group'] == 'Fastball', 'difference'].mean() or 0,
-      'change_breaking_ball': df.loc[df['pitch_group'] == 'Breaking_Ball', 'difference'.mean() or 0,
-      'change_offspeed': df.loc[df['pitch_group'] == 'Offspeed', 'difference'].mean() or 0
-}))
-.reset_index()
+count_prop = (
+    type_pitches
+    .groupby(['player_name', 'count'])
+    .apply(lambda df: df.assign(total_pitches=len(df)))
+    .reset_index(drop=True)
+    .groupby(['player_name', 'pitch_group', 'count'])
+    .apply(lambda df: pd.Series({'proportion': len(df) / df['total_pitches'].iloc[0]}))
+    .reset_index()
 )
+```
+
+```{python}
+avg_diff = (
+    count_diff.groupby(['player_name', 'count', 'cluster'])
+    .apply(lambda df: pd.Series({
+        'change_fastball': df.loc[df['pitch_group'] == 'Fastball', 'difference'].mean() or 0,
+        'change_breaking_ball': df.loc[df['pitch_group'] == 'Breaking_Ball', 'difference'].mean() or 0,
+        'change_offspeed': df.loc[df['pitch_group'] == 'Offspeed', 'difference'].mean() or 0
+    }))
+    .reset_index()
+)
+
+```
+
+```{python}
+from scipy.stats import zscore
+
+# Standardize pitch type changes across all pitchers
+zscore_diff = avg_diff.copy()
+for col in ['change_fastball', 'change_breaking_ball', 'change_offspeed']:
+    zscore_diff[f'z_{col}'] = zscore(zscore_diff[col])
 ```
 
 ## ShinyApp/Plotly
@@ -943,33 +1102,38 @@ import plotly.express as px
 import plotly.graph_objects as go
 import ipywidgets as widgets
 from IPython.display import display
-# Dropdowns
+
 count_dropdown = widgets.Dropdown(options=avg_diff['count'].unique(), description = 'Count:')
-cluster_dropdown = widgets.Dropdown(options = avg_diff['cluster'].unique(), descirption = 'Cluster:')
+
+# Dropdown for cluster
+cluster_dropdown = widgets.Dropdown(options=avg_diff['cluster'].unique(), description = 'Cluster:')
 ```
 
 ```{python}
 def update_plot(count_val, cluster_val):
-  filtered = avg_diff[(avg_diff['count'] == count_val) & (avg_diff['cluster'] ==    cluster_val)]
-  
-  fig = go.Figure(data = [go.Scatter3d(
-    x = filtered['change_fastball'],
-    y = filtered['change_breaking_ball'],
-    z = filtered['change_offspeed'],
-    mode = 'markers',
-    text = filtered['player_name']
-    marker = dict(size = 5)
-)])
-  fig.update_layout(
-    title = '3D Plot of Pitch Type Changes by Pitcher',
-    scene = dict(
-      xaxis_title = 'Change in Fastball',
-      yaxis_title = 'Change in Breaking Ball',
-      zaxis_title = 'Change in Offspeed'
+    filtered = avg_diff[(avg_diff['count'] == count_val) & (avg_diff['cluster'] == cluster_val)]
+    
+    fig = go.Figure(data = [go.Scatter3d(
+        x = filtered['change_fastball'],
+        y = filtered['change_breaking_ball'],
+        z = filtered['change_offspeed'],
+        mode = 'markers',
+        text = filtered['player_name'],
+        marker = dict(size = 5)  # This is where the comma was missing
+    )])
+    
+    fig.update_layout(
+        title = '3D Plot of Pitch Type Changes by Pitcher',
+        scene = dict(
+            xaxis_title = 'Change in Fastball',
+            yaxis_title = 'Change in Breaking Ball',
+            zaxis_title = 'Change in Offspeed'
+        )
     )
-  )
-  fig.show()
-widgets.interactive(update_plot, count_val=count_dropdown, cluster_val = cluster_dropdown)
+    fig.show()
+
+widgets.interactive(update_plot, count_val=count_dropdown, cluster_val=cluster_dropdown)
+
 ```
 
 ## Step 3: Modeling
@@ -1025,9 +1189,8 @@ pitching23 = pd.read_csv("pitching23.csv")
 ```
 
 ```{python}
-pitching23[['Firstname', 'Lastname']] = pitching23['Player'].str.split(' ', 1, expand = True)
+pitching23[['Firstname', 'Lastname']] = pitching23['Player'].str.split(' ', n=1, expand=True)
 pitching23['Player'] = pitching23['Lastname'] + ', ' + pitching23['Firstname']
-pitching23['ERA'] = pitching23['ERA...3']
 era_pitchers = pitching23[['Player', 'ERA']]
 ```
 
@@ -1037,18 +1200,18 @@ avg_diff.drop(columns=['Player'], inplace = True)
 ```
 
 ```{python}
-error_df = (
-  avg_diff
-  .groupby(['player_name', 'count'])
-  .agg(
-    SSE=lambda x: (x['change_fastball']**2 + x['change_breaking_ball']**2 +           x['change_offspeed']**2).sum(),
-    abs_sum=lambda x: (x['change_fastball'].abs() +                     x['change_breaking_ball'].abs() + x['change_offspeed'].abs()).sum(),
-    ERA = ('ERA', 'first')
-    
-  )
-  .reset_index()
-)
+def compute_metrics(group):
+    return pd.Series({
+        'SSE': ((group['change_fastball'])**2 +
+                (group['change_breaking_ball'])**2 +
+                (group['change_offspeed'])**2).sum(),
+        'abs_sum': (group['change_fastball'].abs() +
+                    group['change_breaking_ball'].abs() +
+                    group['change_offspeed'].abs()).sum(),
+        'ERA': group['ERA'].iloc[0]  # or .mean() if more appropriate
+    })
 
+error_df = avg_diff.groupby(['player_name', 'count']).apply(compute_metrics).reset_index()
 error_df['rSSE'] = error_df['SSE']**0.5
 ```
 
@@ -1083,7 +1246,7 @@ error_df_so <- avg_diff_so %>%
   summarize(
     SSE = sqrt(sum((change_fastball)^2 + (change_breaking_ball)^2 + (change_offspeed)^2)),
     abs_sum = sum(abs(change_fastball) + abs(change_breaking_ball) + abs(change_offspeed)),
-    SO = first(SO)  # Keep ERA the same for all counts of a player
+    SO = first(SO) 
   ) %>%
   ungroup()
 ```
@@ -1094,7 +1257,6 @@ error_df_so_adj <- error_df_so %>%
     # Split 'count' into balls and strikes
     balls = as.numeric(sub("-.*", "", count)),
     strikes = as.numeric(sub(".*-", "", count)),
-    # Calculate adjusted_count
     adjusted_count = strikes - balls
   )
 ```
@@ -1118,19 +1280,24 @@ summary(mod_int3)
 # Python Version
 
 ```{python}
-so_pitchers = pitching23[['Player', 'SO']].copy()
-avg_diff_so = avg_diff.merge(so_pitchers, left_on = 'player_name', right_on = 'Player', how = 'left').drop(columns = ['Player'])
+def compute_metrics_so(group):
+    return pd.Series({
+        'SSE': ((group['change_fastball']**2 +
+                 group['change_breaking_ball']**2 +
+                 group['change_offspeed']**2).sum())**0.5,
+        'abs_sum': (group['change_fastball'].abs() +
+                    group['change_breaking_ball'].abs() +
+                    group['change_offspeed'].abs()).sum(),
+        'SO': group['SO'].iloc[0]  # take the first value, or use .mean() if appropriate
+    })
 
 error_df_so = (
-  avg_diff_so
-  .groupby(['player_name', 'count'])
-  .agg(
-      SSE=lambda x: ((x['change_fastball']**2 + x['change_breaking_ball']**2 + x['change_offspeed']**2).sum())**0.5,
-      abs_sum=lambda x: (x['change_fastball'].abs() + x['change_breaking_ball'].abs() + x['change_offspeed'].abs()).sum(),
-      SO = ('SO', 'first')
-  )
-  .reset_index()
+    avg_diff_so
+    .groupby(['player_name', 'count'])
+    .apply(compute_metrics_so)
+    .reset_index()
 )
+
 ```
 
 ```{python}
@@ -1146,13 +1313,32 @@ stat_df = error_df_so.merge(pitching23_cut, left_on = 'player_name', right_on = 
 ```
 
 ```{python}
+stat_df['log_SSE'] = np.log(stat_df['SSE'] + 1e-6)
+stat_df = stat_df.replace([np.inf, -np.inf], np.nan).dropna(subset=['log_SSE'])
+```
+
+
+```{python}
 # Fitting the Model
 import statsmodels.formula.api as smf
 import numpy as np
+
+# Replace 0 SSE values with a small constant to avoid log(0)
+stat_df['log_SSE'] = np.log(stat_df['SSE'].replace(0, 1e-6))
+
+# Remove rows where log_SSE is still inf or NaN
+stat_df = stat_df.replace([np.inf, -np.inf], np.nan)
+stat_df = stat_df.dropna(subset=['log_SSE'])
+
+# Convert count to category 
 stat_df['adjusted_count'] = stat_df['adjusted_count'].astype('category')
-stat_df['log_SSE'] = np.log(stat_df['SSE'])
-mod_int3 = smf.ols('log_SSE ~ C(adjusted_count) + FIP + Q("SO/BB") + IP', data = stat_df).fit()
+
+import statsmodels.formula.api as smf
+mod_int3 = smf.ols('log_SSE ~ C(adjusted_count) + FIP + Q("SO/BB") + IP', data=stat_df).fit()
+
+# Step 5: View results
 print(mod_int3.summary())
+
 ```
 
 In this original model we see the adjusted count of -1, 0, 1, and 2 all
@@ -1164,6 +1350,11 @@ seem to have a significant effect.
 
 ## Conclusion
 
+This project aimed to uncover patterns in pitch selection among pitchers by clustering them based on their usage of fastballs, breaking balls, and offspeed pitches. By applying hierarchical clustering techniques and visualizing the results through various visualizations, we identified distinct groups of pitchers with similar tendencies. These clusters highlighted each pitcher's approach.
+
+We further explored these situational adaptations by examining pitch selection changes in key ball-strike counts (e.g., 0-2 and 1-2) compared to general tendencies. By standardizing these changes using z-scores, we enabled fairer comparisons across players and clusters. 
+
+Overall, this analysis provides a deeper understanding of how pitchers strategize, both generally and situationally. It has potential applications in scouting, player development, and in-game decision-making. Future extensions of this work could include exploring why the pitchers selection were changing in certain counts and including relief pitchers in high stress situations.
 
 :::
 
