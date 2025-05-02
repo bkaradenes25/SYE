@@ -1,5 +1,5 @@
 ---
-title: "R versus Python Side-by-Side"
+title: "An Analysis of MLB Pitch Selection"
 author: "Brendan Karadenes"
 format:
   html:
@@ -13,8 +13,6 @@ execute:
   echo: true
   eval: true
 ---
-
-
 
 ## Introduction
 
@@ -35,20 +33,18 @@ visualize this. Then, we built various models for each pitcher to see if
 certain statistics, like Earned Run Average (ERA) could predict how much
 the pitcher deviated from their primary pitch.
 
-## Step 1: Pitcher Clustering 
+## Step 1: Pitcher Clustering
 
 To begin the project, we gathered each qualified pitcher and their 2023
 season statistics into a single dataset. The list of pitchers can be
 viewed below:
 
-
 ::: panel-tabset
-### R Version   <!-- tab 1 -->
+### R Version <!-- tab 1 -->
 
 ```{r}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
 ```
-
 
 ```{r}
 library(gt)
@@ -166,9 +162,7 @@ filter(player_name %in% c(
 
 ```
 
-
-
-### Python Version   <!-- tab 2 -->
+### Python Version <!-- tab 2 -->
 
 ```{r}
 install.packages("reticulate")
@@ -218,9 +212,8 @@ type for each pitcher. This way, we can compare pitch selection between
 them. We also need to create the `count` variable to see in what count
 each pitch was thrown.
 
-::: {.panel-tabset} 
-
-### R Version
+::: panel-tabset
+### R Version <!-- tab 3 -->
 
 ```{r}
 filtered_pitchers <- filtered_pitchers %>%
@@ -237,7 +230,7 @@ grouped_pitches <- filtered_pitchers %>%
   ungroup()
 ```
 
-### Python Version
+### Python Version <!-- tab 4 -->
 
 ```{python}
 filtered_pitchers['count'] = filtered_pitchers['balls'].astype(str) + "-" + filtered_pitchers['strikes'].astype(str)
@@ -256,7 +249,6 @@ grouped_pitches['total_pitches_in_count'] = (
 
 grouped_pitches['pitch_proportion'] = grouped_pitches['pitch_count'] / grouped_pitches['total_pitches_in_count']
 ```
-
 :::
 
 ## Situational Pitch Usage
@@ -269,7 +261,8 @@ number of pitches thrown for each combination of the three variables.
 Using the `pitch_proportion` variable, we are able to see the proportion
 of that pitch relative to all pitches thrown in that count.
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 5 -->
 
 ```{r}
 grouped_pitches_by_outs <- filtered_pitchers %>%
@@ -309,7 +302,7 @@ aggregated_pitchers_by_outs <- pitchers_grouped %>%
 aggregated_pitchers_by_outs
 ```
 
-# Python Version
+### Python Version <!-- tab 6 -->
 
 ```{python}
 # Count pitches by player, pitch type, and outs
@@ -366,6 +359,7 @@ aggregated_pitchers_by_outs = (
 )
 
 ```
+:::
 
 ## Hierarchical Clustering
 
@@ -383,7 +377,8 @@ different pitch a weight based on these averages in order to evenly
 compare them and provide more accurate clusterings. To achieve this we
 used ranks on each pitch to make comparisons.
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 7 -->
 
 ```{r}
 library(tidyverse)
@@ -442,7 +437,7 @@ consistent with each number of outs. Cluster 3 threw more fastballs when
 there was 0 outs compared to 1 or 2 outs. Also, cluster 5 threw
 significantly more fastballs with 1 out than when they had 0 or 2 outs.
 
-# Python Version
+### Python Version <!-- tab 8 -->
 
 ```{python}
 pitchers_grouped = grouped_pitches_by_outs.pivot(
@@ -470,6 +465,7 @@ ggplot(ranked_pitchers_by_outs, aes(x='outs_when_up', y='weighted_FF', color='pl
     geom_line() + \
     labs(title="Weighted Fastball Usage by Outs", x="Outs", y="Weighted Fastball Usage")
 ```
+:::
 
 ## Pitch Type Groups
 
@@ -482,7 +478,8 @@ knuckleballs, and splitters, and finally breaking balls, which included
 curveballs, sliders, knuckle curveballs, sweepers, and slurves. The code
 for this is shown below:
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 9 -->
 
 ```{r}
 type_pitches <- filtered_pitchers %>%
@@ -496,9 +493,9 @@ type_pitches <- filtered_pitchers %>%
 
 With these new pitch groupings we once again clustered pitchers based on
 their arsenals with the 3 broad pitch types. Similarly, we cut the
-hierarchical clustering tree into 5 groups and viewed the pitch selection
-in each one by calculating the average proportion of pitches in each of
-the three groups.
+hierarchical clustering tree into 5 groups and viewed the pitch
+selection in each one by calculating the average proportion of pitches
+in each of the three groups.
 
 ```{r}
 divided_pitches <- type_pitches %>%
@@ -585,7 +582,7 @@ ranks_outs_long <- ranks_outs %>%
   mutate(pitch_group = gsub("rank_", "" ,pitch_group))
 ```
 
-# Python Version
+### Python Version <!-- tab 10 -->
 
 ```{python}
 import numpy as np
@@ -755,10 +752,12 @@ cluster_pitches_eight["cluster"] = clusters
 
 To visualize these results we looked at plots and heatmaps to see
 differences between the different clusters.
+:::
 
 ## Visualizations
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 11 -->
 
 ```{r}
 ggplot(data = ranks_outs_long, mapping = aes(x = outs_when_up, y = last_name, fill = rank)) +
@@ -797,7 +796,7 @@ ggplot(data = pitch_selection_plot, mapping = aes(x = factor(cluster), y = propo
   theme_minimal()
 ```
 
-# Python Version
+### Python Version <!-- tab 12 -->
 
 ```{python}
 # Group by cluster and compute average pitch proportions
@@ -877,6 +876,7 @@ pitch_selection_plot = (
   theme_minimal()
 )
 ```
+:::
 
 ## Step 2: Situational Changes
 
@@ -884,7 +884,8 @@ After clustering the pitchers we moved on to see how they reacted in
 different ball-strike counts. Specifically, we were interested in how
 their pitch selection varied in different ball-strike counts.
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 13 -->
 
 ```{r}
 specific_counts <- type_pitches %>%
@@ -940,7 +941,7 @@ ggplot(data = comparison_cluster, aes(x = factor(cluster), y = avg_proportion_di
   theme_minimal()
 ```
 
-# Python Version
+### Python Version <!-- tab 14 -->
 
 ```{python}
 specific_counts = (
@@ -992,6 +993,7 @@ comparison_cluster = (
   theme_minimal()
 )
 ```
+:::
 
 ## Standardization
 
@@ -1003,7 +1005,8 @@ between the different clusters.
 The code below reformats the data and computes the average change in
 pitch usage by pitch type and cluster.
 
-# R Version
+::: panel-tabset
+### R Version <!-- tab 15 -->
 
 ```{r}
 count_prop <- type_pitches %>%
@@ -1042,7 +1045,7 @@ avg_diff <- count_diff %>%
   ungroup()
 ```
 
-# Python Version
+### Python Version <!-- tab 16 -->
 
 ```{python}
 # Group by player_name and count to compute total pitches per group
@@ -1085,7 +1088,6 @@ count_prop = count_prop.merge(
 )
 ```
 
-
 ```{python}
 count_diff = (
     count_prop
@@ -1116,6 +1118,7 @@ zscore_diff = avg_diff.copy()
 for col in ['change_fastball', 'change_breaking_ball', 'change_offspeed']:
     zscore_diff[f'z_{col}'] = zscore(zscore_diff[col])
 ```
+:::
 
 ## ShinyApp/Plotly
 
@@ -1128,7 +1131,9 @@ visualize the different changes. Since there are three different pitch
 groupings, a 3D visual was neccesary to view the data and took us one
 step closer to look into modeling.
 
-# R Version
+::: panel-tabset
+
+### R Version <!-- tab 17 -->
 
 ```{r, eval = FALSE}
 library(plotly)
@@ -1178,7 +1183,7 @@ server <- function(input, output) {
 shinyApp(ui = ui, server = server)
 ```
 
-# Python Version
+### Python Version <!-- tab 18 -->
 
 ```{python}
 # Plotly version
@@ -1219,6 +1224,7 @@ def update_plot(count_val, cluster_val):
 widgets.interactive(update_plot, count_val=count_dropdown, cluster_val=cluster_dropdown)
 
 ```
+:::
 
 ## Step 3: Modeling
 
@@ -1232,7 +1238,9 @@ breaking balls, and offspeed) and the absolute sum of the changes by
 taking the absolute value of each change for each type of pitch. The
 code for which can be found below:
 
-# R Version
+::: panel-tabset
+
+### R Version <!-- tab 19 -->
 
 ```{r}
 pitching23 <- read_csv("pitching23.csv")
@@ -1265,7 +1273,7 @@ error_df <- avg_diff %>%
   ungroup()
 ```
 
-# Python Version
+### Python Version <!-- tab 20 -->
 
 ```{python}
 # Load in data
@@ -1299,6 +1307,8 @@ error_df = avg_diff.groupby(['player_name', 'count']).apply(compute_metrics).res
 error_df['rSSE'] = error_df['SSE']**0.5
 ```
 
+:::
+
 ## More Modeling
 
 For the actual modeling we used statistics like ERA, different counts,
@@ -1307,7 +1317,9 @@ batters faced to predict SSE and the absolute sum of changes. We
 attempted various model types including linear and log models to find
 the best fit or at least look for significant explanatory variables.
 
-# R Version
+::: panel-tabset
+
+### R Version <!-- tab 21 -->
 
 ```{r}
 so_pitchers <- pitching23 %>%
@@ -1361,7 +1373,7 @@ mod_int3 <- lm(log(SSE) ~ as.factor(adjusted_count) + FIP + `SO/BB` + IP, data =
 summary(mod_int3)
 ```
 
-# Python Version
+### Python Version <!-- tab 22 -->
 
 ```{python}
 # Start from the original DataFrame so we retain all columns
@@ -1380,7 +1392,6 @@ so_pitchers = so_pitchers[['Player', 'SO']]
 
 ```
 
-
 ```{python}
 # Perform the join
 avg_diff_so = avg_diff.merge(so_pitchers, left_on='player_name', right_on='Player', how='left')
@@ -1397,7 +1408,6 @@ error_df_so = avg_diff_so.groupby(['player_name', 'count']).apply(
 ).reset_index()
 
 ```
-
 
 ```{python}
 def compute_metrics_so(group):
@@ -1437,7 +1447,6 @@ stat_df['log_SSE'] = np.log(stat_df['SSE'] + 1e-6)
 stat_df = stat_df.replace([np.inf, -np.inf], np.nan).dropna(subset=['log_SSE'])
 ```
 
-
 ```{python}
 # Fitting the Model
 import statsmodels.formula.api as smf
@@ -1461,6 +1470,8 @@ print(mod_int3.summary())
 
 ```
 
+:::
+
 In this original model we see the adjusted count of -1, 0, 1, and 2 all
 being significant, suggesting that in those situations where the pitcher
 is either even, down 1 ball, up 1 strike, or up 2 strikes, pitchers are
@@ -1470,11 +1481,21 @@ seem to have a significant effect.
 
 ## Conclusion
 
-This project aimed to uncover patterns in pitch selection among pitchers by clustering them based on their usage of fastballs, breaking balls, and offspeed pitches. By applying hierarchical clustering techniques and visualizing the results through various visualizations, we identified distinct groups of pitchers with similar tendencies. These clusters highlighted each pitcher's approach.
+This project aimed to uncover patterns in pitch selection among pitchers
+by clustering them based on their usage of fastballs, breaking balls,
+and offspeed pitches. By applying hierarchical clustering techniques and
+visualizing the results through various visualizations, we identified
+distinct groups of pitchers with similar tendencies. These clusters
+highlighted each pitcher's approach.
 
-We further explored these situational adaptations by examining pitch selection changes in key ball-strike counts (e.g., 0-2 and 1-2) compared to general tendencies. By standardizing these changes using z-scores, we enabled fairer comparisons across players and clusters. 
+We further explored these situational adaptations by examining pitch
+selection changes in key ball-strike counts (e.g., 0-2 and 1-2) compared
+to general tendencies. By standardizing these changes using z-scores, we
+enabled fairer comparisons across players and clusters.
 
-Overall, this analysis provides a deeper understanding of how pitchers strategize, both generally and situationally. It has potential applications in scouting, player development, and in-game decision-making. Future extensions of this work could include exploring why the pitchers selection were changing in certain counts and including relief pitchers in high stress situations.
-
-
-
+Overall, this analysis provides a deeper understanding of how pitchers
+strategize, both generally and situationally. It has potential
+applications in scouting, player development, and in-game
+decision-making. Future extensions of this work could include exploring
+why the pitchers selection were changing in certain counts and including
+relief pitchers in high stress situations.
