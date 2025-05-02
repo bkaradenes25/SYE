@@ -28,14 +28,19 @@ visualize this. Then, we built various models for each pitcher to see if
 certain statistics, like Earned Run Average (ERA) could predict how much
 the pitcher deviated from their primary pitch.
 
-## Step 1: Pitcher Clustering
+## Step 1: Pitcher Clustering 
 
 To begin the project, we gathered each qualified pitcher and their 2023
 season statistics into a single dataset. The list of pitchers can be
 viewed below:
 
-# R Version
-  
+# R Version 
+
+```{r}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+
 ```{r}
 library(gt)
 library(tidyverse)
@@ -152,7 +157,7 @@ filter(player_name %in% c(
 
 ```
 
-# Python Version
+# Python Version 
 
 ```{r}
 install.packages("reticulate")
@@ -567,6 +572,23 @@ ranks_outs_long <- ranks_outs %>%
 # Python Version
 
 ```{python}
+import numpy as np
+# Remove non-pitch events
+type_pitches_outs = filtered_pitchers[~filtered_pitchers["pitch_type"].isin(["CS", "PO"])].copy()
+
+# Assign pitch group
+type_pitches_outs["pitch_group"] = np.select(
+    [
+        type_pitches_outs["pitch_type"].isin(["FF", "SI", "FC"]),
+        type_pitches_outs["pitch_type"].isin(["CH", "FS", "KN"]),
+        type_pitches_outs["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
+    ],
+    ["Fastball", "Offspeed", "Breaking_Ball"],
+    default="Unknown"
+)
+```
+
+```{python}
 import re
 import numpy as np
 type_pitches_outs["pitch_group"] = np.select(
@@ -576,24 +598,40 @@ type_pitches_outs["pitch_group"] = np.select(
         type_pitches_outs["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
     ],
     ["Fastball", "Offspeed", "Breaking_Ball"],
-    default=None  # or use dtype='object' if assigning to an array
+    default=None  
 )
 
 ```
 
 ```{python}
+# Remove non-pitch events
+type_pitches_outs = filtered_pitchers[~filtered_pitchers["pitch_type"].isin(["CS", "PO"])].copy()
+
+# Assign pitch group
+type_pitches_outs["pitch_group"] = np.select(
+    [
+        type_pitches_outs["pitch_type"].isin(["FF", "SI", "FC"]),
+        type_pitches_outs["pitch_type"].isin(["CH", "FS", "KN"]),
+        type_pitches_outs["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
+    ],
+    ["Fastball", "Offspeed", "Breaking_Ball"],
+    default="Unknown"
+)
+
+#  Summarize counts by player, outs, and pitch group
 type_pitches_outs_sum = (
     type_pitches_outs
-    .dropna(subset=["pitch_group"])  # remove rows with undefined pitch_group
+    .dropna(subset=["pitch_group"])
     .groupby(["player_name", "outs_when_up", "pitch_group"])
     .size()
     .reset_index(name="count")
 )
 
+# Compute proportions within each player_name + outs_when_up group
 type_pitches_outs_sum = (
     type_pitches_outs_sum
     .groupby(["player_name", "outs_when_up"])
-    .apply(lambda df: df.assign(proportion = df["count"] / df["count"].sum()))
+    .apply(lambda df: df.assign(proportion=df["count"] / df["count"].sum()))
     .reset_index(drop=True)
     .drop(columns="count")
     .pivot(index=["player_name", "outs_when_up"], columns="pitch_group", values="proportion")
@@ -666,7 +704,7 @@ type_pitches["pitch_group"] = np.select(
         type_pitches["pitch_type"].isin(["CU", "SL", "ST", "KC", "SV"])
     ],
     ["Fastball", "Offspeed", "Breaking_Ball"],
-    default="Unknown"  # Fix: using a string to match other outputs
+    default="Unknown"  
 )
 
 # Proportion of each pitch group by pitcher
@@ -991,24 +1029,54 @@ avg_diff <- count_diff %>%
 # Python Version
 
 ```{python}
+# Group by player_name and count to compute total pitches per group
+type_pitches["total_pitches"] = (
+    type_pitches
+    .groupby(["player_name", "count"])["pitch_type"]
+    .transform("count")
+)
+
+# Now group by player_name, pitch_group, and count to calculate proportions
+count_prop = (
+    type_pitches
+    .groupby(["player_name", "pitch_group", "count"])
+    .size()
+    .reset_index(name="pitch_count")
+)
+
+# Merge total_pitches back in if not already included
+count_prop = count_prop.merge(
+    type_pitches[["player_name", "count", "total_pitches"]].drop_duplicates(),
+    on=["player_name", "count"],
+    how="left"
+)
+
+# Calculate proportion
+count_prop["proportion"] = count_prop["pitch_count"] / count_prop["total_pitches"]
+```
+
+```{python}
+from IPython.display import display
+display(type_pitches)
+type_pitches.columns
+```
+
+```{python}
+count_prop = count_prop.merge(
+    aggregated_pitchers_by_outs[['player_name', 'cluster']], 
+    on='player_name', 
+    how='left'
+)
+```
+
+
+```{python}
 count_diff = (
     count_prop
     .merge(comparison, on=["player_name", "count", "pitch_group"], how="inner")
     .assign(difference = lambda df: df["proportion_general"] - df["proportion"])
 )
 count_diff = count_diff.drop(columns=["proportion_specific", "proportion_difference"], errors="ignore")
-```
-
-```{python}
-count_prop = (
-    type_pitches
-    .groupby(['player_name', 'count'])
-    .apply(lambda df: df.assign(total_pitches=len(df)))
-    .reset_index(drop=True)
-    .groupby(['player_name', 'pitch_group', 'count'])
-    .apply(lambda df: pd.Series({'proportion': len(df) / df['total_pitches'].iloc[0]}))
-    .reset_index()
-)
 ```
 
 ```{python}
@@ -1280,6 +1348,42 @@ summary(mod_int3)
 # Python Version
 
 ```{python}
+# Start from the original DataFrame so we retain all columns
+so_pitchers = pitching23.copy()
+
+# Split 'Player' column into 'Firstname' and 'Lastname'
+so_pitchers[['Firstname', 'Lastname']] = so_pitchers['Player'].str.split(' ', n=1, expand=True)
+
+# Create new 'Player' name in 'Lastname, Firstname' format
+so_pitchers['Player'] = so_pitchers['Lastname'] + ', ' + so_pitchers['Firstname']
+
+
+# Now select the relevant columns
+so_pitchers = so_pitchers[['Player', 'SO']]
+
+
+```
+
+
+```{python}
+# Perform the join
+avg_diff_so = avg_diff.merge(so_pitchers, left_on='player_name', right_on='Player', how='left')
+```
+
+```{python}
+# Calculate SSE and absolute sum of changes for each pitcher
+error_df_so = avg_diff_so.groupby(['player_name', 'count']).apply(
+    lambda x: pd.Series({
+        'SSE': (x['change_fastball']**2 + x['change_breaking_ball']**2 + x['change_offspeed']**2).sum()**0.5,
+        'abs_sum': (abs(x['change_fastball']) + abs(x['change_breaking_ball']) + abs(x['change_offspeed'])).sum(),
+        'SO': x['SO'].iloc[0]  # Assuming 'SO' is consistent for each player_name and count
+    })
+).reset_index()
+
+```
+
+
+```{python}
 def compute_metrics_so(group):
     return pd.Series({
         'SSE': ((group['change_fastball']**2 +
@@ -1336,7 +1440,7 @@ stat_df['adjusted_count'] = stat_df['adjusted_count'].astype('category')
 import statsmodels.formula.api as smf
 mod_int3 = smf.ols('log_SSE ~ C(adjusted_count) + FIP + Q("SO/BB") + IP', data=stat_df).fit()
 
-# Step 5: View results
+# View results
 print(mod_int3.summary())
 
 ```
