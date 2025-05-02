@@ -218,7 +218,9 @@ type for each pitcher. This way, we can compare pitch selection between
 them. We also need to create the `count` variable to see in what count
 each pitch was thrown.
 
-# R Version
+::: {.panel-tabset} 
+
+### R Version
 
 ```{r}
 filtered_pitchers <- filtered_pitchers %>%
@@ -235,7 +237,7 @@ grouped_pitches <- filtered_pitchers %>%
   ungroup()
 ```
 
-# Python Version
+### Python Version
 
 ```{python}
 filtered_pitchers['count'] = filtered_pitchers['balls'].astype(str) + "-" + filtered_pitchers['strikes'].astype(str)
@@ -254,6 +256,8 @@ grouped_pitches['total_pitches_in_count'] = (
 
 grouped_pitches['pitch_proportion'] = grouped_pitches['pitch_count'] / grouped_pitches['total_pitches_in_count']
 ```
+
+:::
 
 ## Situational Pitch Usage
 
