@@ -1,13 +1,20 @@
 ---
 title: "R versus Python Side-by-Side"
 author: "Brendan Karadenes"
-format: html
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left   
 editor: 
   markdown: 
     wrap: 72
+execute:
+  echo: true
+  eval: true
 ---
 
-::: panel-tabset
+
 
 ## Introduction
 
@@ -34,7 +41,9 @@ To begin the project, we gathered each qualified pitcher and their 2023
 season statistics into a single dataset. The list of pitchers can be
 viewed below:
 
-# R Version 
+
+::: panel-tabset
+### R Version   <!-- tab 1 -->
 
 ```{r}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
@@ -157,7 +166,9 @@ filter(player_name %in% c(
 
 ```
 
-# Python Version 
+
+
+### Python Version   <!-- tab 2 -->
 
 ```{r}
 install.packages("reticulate")
@@ -198,6 +209,7 @@ unique_pitchers_count = qual_pitchers['pitcher'].nunique()
 ```{python}
 filtered_pitchers = qual_pitchers[qual_pitchers['player_name'].isin(players['Player'])]
 ```
+:::
 
 ## Pitch Proportions
 
@@ -1460,6 +1472,5 @@ We further explored these situational adaptations by examining pitch selection c
 
 Overall, this analysis provides a deeper understanding of how pitchers strategize, both generally and situationally. It has potential applications in scouting, player development, and in-game decision-making. Future extensions of this work could include exploring why the pitchers selection were changing in certain counts and including relief pitchers in high stress situations.
 
-:::
 
 
